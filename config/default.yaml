@@ -1,0 +1,28 @@
+ilp_version: v4
+
+branch_priorities: true
+replace_min: true
+branching_ilp: true
+branching_levels: 5
+fill_cluster_sizes: false
+
+model_params:
+  TimeLimit: 28800
+  BarHomogeneous: 1
+  BarConvTol: 0.001
+  FeasibilityTol: 0.001
+  # Method: 2
+  # Crossover: 0
+  # NodeMethod: 2
+
+bound_model_params:
+  TimeLimit: 1800
+  BarConvTol: 0.0001
+  FeasibilityTol: 0.0001
+  # Concurrent spin time: 9.02s (can be avoided by choosing Method=3)
+  Method: 3
+
+# https://support.gurobi.com/hc/en-us/community/posts/4406728832145-Crossover-Takes-Long
+# Method: 2
+# Crossover: 0
+# NodeMethod: 2
