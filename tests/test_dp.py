@@ -4,7 +4,8 @@ import unittest
 from typing import Dict
 
 import numpy as np
-from kmeans_ilp.dynamic_program import compute_bounds
+
+from exact_kmeans.dynamic_program import compute_bounds
 
 
 def test_correctness(n: int, k: int, lb: Dict[int, float]) -> bool:

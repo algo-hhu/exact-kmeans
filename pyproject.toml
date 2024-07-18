@@ -4,9 +4,9 @@ version = "0.1.0"
 description = "Computes an optimal k-means solution for small instances and small k."
 authors = ["Melanie Schmidt <mschmidt@hhu.de>", "Giulia Baldini <giulia.baldini@hhu.de>", "Anna Arutyunova <anna.arutyunova@hhu.de>"]
 readme = "README.md"
-license = "LICENSE"
 packages = [
-    { include = "k_means_ilp" }
+    { include = "exact_kmeans" },
+    { include = "config" }
 ]
 
 [tool.poetry.dependencies]

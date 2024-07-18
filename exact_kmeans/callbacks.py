@@ -3,7 +3,8 @@ import logging
 import gurobipy as gp
 import numpy as np
 from gurobipy import GRB
-from kmeans_ilp.util import print_variables
+
+from exact_kmeans.util import print_variables
 
 logger = logging.getLogger(__name__)
 

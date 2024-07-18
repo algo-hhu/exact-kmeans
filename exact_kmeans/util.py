@@ -107,3 +107,29 @@ def compute_largest_distance(X: np.ndarray) -> Any:
     )
 
     return distances.max()
+
+
+def get_distance(x: np.array, y: np.array) -> Any:
+    return sum((x - y) ** 2)
+
+
+def kmeans_cost(cluster_labels: np.ndarray, points: np.ndarray, k: int) -> float:
+    dim = points.shape[1]
+    centroids = np.zeros(shape=(k, dim))
+    sizes = np.zeros(k)
+
+    # computation of centroids
+    for i in range(len(points)):
+        label = cluster_labels[i]
+        centroids[label] += points[i]
+        sizes[label] += 1
+
+    for i in range(k):
+        centroids[i] /= sizes[i]
+
+    cost = 0
+    for i in range(len(points)):
+        label = cluster_labels[i]
+        cost += get_distance(centroids[label], points[i])
+
+    return cost

@@ -8,15 +8,17 @@ import queue
 from itertools import chain, zip_longest
 from pathlib import Path
 from time import time
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gurobipy as gp
-import kmeans_ilp.dynamic_program.dp_plain as dp
 import numpy as np
 import yaml
 from gurobipy import GRB
-from kmeans_ilp.util import JsonEncoder, print_variables
+from sklearn.cluster import KMeans
 from tqdm import tqdm
+
+import exact_kmeans.dynamic_program.dp_plain as dp
+from exact_kmeans.util import JsonEncoder, get_distance, kmeans_cost, print_variables
 
 # class GurobiFilter(logging.Filter):
 #     def __init__(self, name="GurobiFilter"):
@@ -37,24 +39,15 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def get_cluster_sizes(k: int, n_points: int, start: int = 0) -> Generator:
-    if k == 1:
-        if n_points >= start:
-            yield [n_points]
-    else:
-        for value in range(start, n_points + 1):
-            for permutation in get_cluster_sizes(k - 1, n_points - value, value):
-                yield [value] + permutation
-
-
-class KmeansILP:
+class ExactKMeans:
     def __init__(
         self,
         X: np.ndarray,
         k: int,
-        config_file: Optional[Path] = None,
+        config_file: Union[str, Path] = "config/default.yaml",
         cache_current_run_path: Optional[Path] = None,
         load_existing_run_path: Optional[Path] = None,
+        kmeans_iterations: int = 100,
     ) -> None:
         self.X = X
         self.k = k
@@ -65,6 +58,7 @@ class KmeansILP:
         self._v = 1
         self._n = self.n + self._v
         self._k = self.k + self._v
+        self.kmeans_iterations = kmeans_iterations
 
         self.num_processes = multiprocessing.cpu_count()
 
@@ -75,15 +69,12 @@ class KmeansILP:
 
         self.changed_model_params = {}
         self.changed_bound_model_params = {}
-        if config_file is not None:
-            with config_file.open("r") as f:
-                self.config = yaml.safe_load(f)
-            for key, value in self.config["model_params"].items():
-                self.changed_model_params[key] = value
-            for key, value in self.config["bound_model_params"].items():
-                self.changed_bound_model_params[key] = value
-        else:
-            self.config = None
+        with Path(config_file).open("r") as f:
+            self.config = yaml.safe_load(f)
+        for key, value in self.config["model_params"].items():
+            self.changed_model_params[key] = value
+        for key, value in self.config["bound_model_params"].items():
+            self.changed_bound_model_params[key] = value
 
         self.tolerance_value = 0
         for param in self.changed_model_params:
@@ -119,12 +110,6 @@ class KmeansILP:
                 f"fill up cluster sizes to {self.k}."
             )
             self.ilp_version += "-fill-sizes"
-
-        # if self.config.get("bound_cost_dmax", False):
-        #     logger.info(
-        #         "Bounding the cost of the fixed cluster size ILP using the maximum distance."
-        #     )
-        #     self.ilp_version += "-bound-cost-dmax"
 
         self.cache_current_run_path = cache_current_run_path
 
@@ -165,6 +150,9 @@ class KmeansILP:
             self.processed_cluster_sizes = []
 
         self.model: Optional[gp.Model] = None
+
+    def distance_by_index(self, i: int, j: int) -> Any:
+        return get_distance(self.X[i - self._v], self.X[j - self._v])
 
     def change_model_params(
         self, model: gp.Model, bound: bool = False, remove_tolerance: bool = False
@@ -362,7 +350,7 @@ class KmeansILP:
 
         constr = model.addConstr(
             gp.quicksum(
-                (y[i, j, ll] * gp.quicksum(self.get_distance(i, j)))
+                (y[i, j, ll] * self.distance_by_index(i, j))
                 / (cluster_sizes[ll - 1] if cluster_sizes[ll - 1] > 0 else 1)
                 for i in range(self._v, self._n - 1)
                 for j in range(i + 1, self._n)
@@ -414,9 +402,6 @@ class KmeansILP:
             for ll in range(self._v, k):
                 x[i, ll].BranchPriority = 1
 
-    def get_distance(self, i: int, j: int) -> np.ndarray:
-        return (self.X[i - self._v] - self.X[j - self._v]) ** 2
-
     def run_single_cluster_ilp(self, m: int) -> Tuple[int, float]:
         logger.info(f"Running ILP with cluster size bound: {m}")
         start = time()
@@ -448,7 +433,7 @@ class KmeansILP:
 
         model.setObjective(
             gp.quicksum(
-                (y[i, j, ll] * gp.quicksum(self.get_distance(i, j)))
+                (y[i, j, ll] * self.distance_by_index(i, j))
                 / (cluster_sizes[ll - 1] if cluster_sizes[ll - 1] > 0 else 1)
                 for i in range(self._v, self._n - 1)
                 for j in range(i + 1, self._n)
@@ -493,7 +478,7 @@ class KmeansILP:
             equals = True
 
         # TODO: Try reinitializing the same model every time
-        model = gp.Model(f"kmeans_ilp_{cluster_sizes}")
+        model = gp.Model(f"exact_kmeans_{cluster_sizes}")
         self.change_model_params(model, remove_tolerance=remove_tolerance)
 
         x = self.set_var_x(model, variable_type=GRB.BINARY, different_k=k)
@@ -535,7 +520,7 @@ class KmeansILP:
 
         model.setObjective(
             gp.quicksum(
-                (y[i, j, ll] * gp.quicksum(self.get_distance(i, j)))
+                (y[i, j, ll] * self.distance_by_index(i, j))
                 / (cluster_sizes[ll - 1] if cluster_sizes[ll - 1] > 0 else 1)
                 for i in range(self._v, self._n - 1)
                 for j in range(i + 1, self._n)
@@ -765,19 +750,6 @@ class KmeansILP:
 
             output_queue.put((found_bound, ILP_time, current_cluster_sizes))
 
-    def compute_optimal_kmeanspp_cluster_cost(
-        self, kmeanspp_labels: np.ndarray
-    ) -> Tuple[List[int], List[int]]:
-        _, cluster_sizes = np.unique(kmeanspp_labels, return_counts=True)
-        sorted_sizes = sorted(cluster_sizes, reverse=True)
-        logger.info(f"KMeans++ cluster sizes: {sorted_sizes}")
-
-        sorted_map = {v: i for i, v in enumerate(np.argsort(-cluster_sizes))}
-
-        initial_labels = [sorted_map[ll] for ll in kmeanspp_labels]
-
-        return initial_labels, sorted_sizes
-
     def compute_cluster_size_objectives(self) -> None:
         # If the cluster sizes have not already been computed
         # Iterate through all the possible cluster sizes to find
@@ -910,15 +882,52 @@ class KmeansILP:
             )
         return best_sizes, best_obj.value
 
+    def sort_labels(self, kmeanspp_labels: np.ndarray) -> Tuple[List[int], List[int]]:
+        _, cluster_sizes = np.unique(kmeanspp_labels, return_counts=True)
+        sorted_sizes = sorted(cluster_sizes, reverse=True)
+        logger.info(f"KMeans++ cluster sizes: {sorted_sizes}")
+
+        sorted_map = {v: i for i, v in enumerate(np.argsort(-cluster_sizes))}
+
+        initial_labels = [sorted_map[ll] for ll in kmeanspp_labels]
+
+        return initial_labels, sorted_sizes
+
+    def compute_initial_cost_bound(self) -> Tuple[float, np.ndarray]:
+        best_inertia = np.inf
+        best_labels = None
+
+        for i in range(self.kmeans_iterations):
+            kmeans = KMeans(
+                n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+            )
+            kmeans.fit(self.X)
+            if kmeans.inertia_ < best_inertia:
+                best_inertia = kmeans.inertia_
+                best_labels = kmeans.labels_
+
+        return best_inertia, best_labels
+
     def optimize(
         self,
-        kmeanspp_cost: float,
-        kmeanspp_labels: np.ndarray,
+        kmeanspp_cost: Optional[float] = None,
+        kmeanspp_labels: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
-        try:
-            initial_labels, kmeanspp_sizes = self.compute_optimal_kmeanspp_cluster_cost(
-                kmeanspp_labels
+        if kmeanspp_cost is None and kmeanspp_labels is None:
+            kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
+
+        if kmeanspp_labels is None and kmeanspp_cost is not None:
+            raise ValueError(
+                "If kmeanspp_cost is provided, kmeanspp_labels must be provided as well."
             )
+
+        if kmeanspp_labels is not None and kmeanspp_cost is None:
+            kmeanspp_cost = kmeans_cost(kmeanspp_labels, points=self.X, k=self.k)
+
+        logger.info("Chosen initial KMeans++ solution with cost: %f", kmeanspp_cost)
+
+        try:
+            initial_labels, kmeanspp_sizes = self.sort_labels(kmeanspp_labels)
             self.kmeanspp_cluster_cost = kmeanspp_cost
 
             self.compute_cluster_size_objectives()
@@ -932,7 +941,7 @@ class KmeansILP:
             best_sizes, best_obj = self.compute_best_cluster_sizes(kmeanspp_sizes)
         except KeyboardInterrupt:
             store_path = (
-                Path(f"kmeans_ilp_pid_{os.getpid()}.json")
+                Path(f"exact_kmeans_pid_{os.getpid()}.json")
                 if self.cache_current_run_path is None
                 else self.cache_current_run_path
             )

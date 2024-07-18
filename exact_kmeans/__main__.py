@@ -5,11 +5,10 @@ import sys
 from pathlib import Path
 from time import time
 
-import numpy as np
 import pandas as pd
-from kmeans_ilp.ilp import KmeansILP
-from kmeans_ilp.util import JsonEncoder, get_git_hash
-from sklearn.cluster import KMeans
+
+from exact_kmeans.ilp import ExactKMeans
+from exact_kmeans.util import JsonEncoder, get_git_hash
 
 logger = logging.getLogger(__name__)
 
@@ -63,33 +62,17 @@ if __name__ == "__main__":
     X = data.values
     logger.info(f"The data has the following shape: {X.shape}")
 
-    ilp = KmeansILP(
+    ilp = ExactKMeans(
         X=X,
         k=args.k,
         config_file=args.config_file,
         load_existing_run_path=args.load_existing_run_path,
         cache_current_run_path=args.cache_current_run_path,
+        kmeans_iterations=args.kmeans_iterations,
     )
-
-    best_inertia = np.inf
-    best_labels = None
-
-    for i in range(args.kmeans_iterations):
-        kmeans = KMeans(
-            n_clusters=args.k, n_init="auto", init="k-means++", random_state=i
-        )
-        kmeans.fit(X)
-        if kmeans.inertia_ < best_inertia:
-            best_inertia = kmeans.inertia_
-            best_labels = kmeans.labels_
-
-    logger.info("Chosen initial KMeans++ solution with inertia: %f", best_inertia)
 
     start = time()
-    res = ilp.optimize(
-        kmeanspp_cost=best_inertia,
-        kmeanspp_labels=best_labels,
-    )
+    res = ilp.optimize()
     ilp_time = time() - start
 
     if args.results_path is not None:
