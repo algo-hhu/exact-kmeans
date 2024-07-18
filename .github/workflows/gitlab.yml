@@ -4,13 +4,13 @@ on:
       branches:
         - main
       paths:
-        - "k_means_ilp/**"
+        - "exact_kmeans/**"
         - "tests/**"
         - "config/**"
         - "poetry.lock"
     pull_request:
       paths:
-        - "k_means_ilp/**"
+        - "exact_kmeans/**"
         - "tests/**"
         - "config/**"
         - "poetry.lock"
@@ -32,6 +32,6 @@ jobs:
         ref: 'main'
         variables: |
           {
-            "PROJECT": "k_means_ilp",
+            "PROJECT": "exact_kmeans",
             "GIT_HASH": "${{ github.event.pull_request.head.sha || github.sha }}"
           }
