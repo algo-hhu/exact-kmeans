@@ -49,6 +49,8 @@ class ExactKMeans:
         load_existing_run_path: Optional[Path] = None,
         kmeans_iterations: int = 100,
     ) -> None:
+        if not isinstance(X, np.ndarray):
+            raise ValueError("Please convert the input data to a numpy array.")
         self.X = X
         self.k = k
         self.n = len(X)
