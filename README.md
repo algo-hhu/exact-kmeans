@@ -5,9 +5,19 @@
 
 # exact-kmeans
 
-Text text text
+This package computes exact solutions to the $k$-means problem using integer linear programming (ILP).
+Since our plain ILP solution to the problem was too slow, we implemented a branch-and-bound algorithm that computes multiple ILP solutions for different cluster sizes to find the optimal cluster sizes $[c_1, \ldots, c_k]$.
+
+The algorithm works as follows:
+- We run $k$-means++ on the data to get an initial upper bound for the cost.
+- We try to find the largest cluster size $c_1$ that any cluster may have and that is less than the initial upper bound. We do this by solving an ILP.
+- We iterate through all possible cluster sizes $c_1, \ldots, c_k$ and compute the optimal cluster sizes for each $c_i$. However, we don't actually iterate through all the sizes, but use a branch-and-bound algorithm to skip some of them. You can see an example of this in the tree in the "Plot the Branch and Bound Tree" section. For every node in the tree, an ILP is solved.
+
 
 ## Installation
+
+For this package to work, you need to have a working installation of [Gurobi](https://www.gurobi.com/). You can get a free academic license [here](https://www.gurobi.com/academia/academic-program-and-licenses/).
+[Here](https://support.gurobi.com/hc/en-us/articles/4534161999889-How-do-I-install-Gurobi-Optimizer) you can find a guide on how to install it.
 
 ```bash
 pip install exact-kmeans
