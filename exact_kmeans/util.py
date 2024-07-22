@@ -5,7 +5,6 @@ from typing import Any, Generator, List, Optional, Tuple
 
 import gurobipy as gp
 import numpy as np
-from scipy.spatial.distance import cdist
 
 logger = logging.getLogger(__name__)
 
@@ -95,18 +94,6 @@ def print_variable(var_name: str, indices: List[str], value: float) -> Optional[
             return f"\npoint i = {i} is assigned to cluster l = {ll} which has size m = {m}"
 
     return f"Unknown variable {var_name} with indices {indices}"
-
-
-# TODO: Smarter way to do this?
-def compute_largest_distance(X: np.ndarray) -> Any:
-    distances = cdist(X, X, metric="sqeuclidean")
-    p1, p2 = np.unravel_index(distances.argmax(), distances.shape)
-
-    logger.info(
-        f"The largest distance is between {X[p1]} and {X[p2]} with distance {distances[p1, p2]}"
-    )
-
-    return distances.max()
 
 
 def get_distance(x: np.ndarray, y: np.ndarray) -> Any:
