@@ -109,7 +109,7 @@ def compute_largest_distance(X: np.ndarray) -> Any:
     return distances.max()
 
 
-def get_distance(x: np.array, y: np.array) -> Any:
+def get_distance(x: np.ndarray, y: np.ndarray) -> Any:
     return sum((x - y) ** 2)
 
 

@@ -416,7 +416,7 @@ class ExactKMeans:
         model = gp.Model(f"kmeans_bound_{m}")
         self.change_model_params(model, bound=True)
         k = 2
-        cluster_sizes = [m]
+        cluster_sizes = np.array([m])
 
         x = self.set_var_x(model, variable_type=GRB.BINARY, different_k=k)
         y = self.set_var_y(model, variable_type=GRB.CONTINUOUS, different_k=k)
@@ -802,7 +802,7 @@ class ExactKMeans:
 
     def compute_best_cluster_sizes(
         self, kmeanspp_sizes: List[int]
-    ) -> Tuple[List[int], float]:
+    ) -> Tuple[np.ndarray, float]:
         m_max = max(self.cluster_size_objectives.keys())
         m_min = math.ceil(self.n / self.k)
 
@@ -888,7 +888,7 @@ class ExactKMeans:
                 "does not match objective found in run without "
                 f"tolerance {best_obj.value}."
             )
-        return best_sizes, best_obj.value
+        return np.array(best_sizes), best_obj.value
 
     def sort_labels(self, kmeanspp_labels: np.ndarray) -> Tuple[List[int], List[int]]:
         _, cluster_sizes = np.unique(kmeanspp_labels, return_counts=True)
@@ -914,6 +914,9 @@ class ExactKMeans:
                 best_inertia = kmeans.inertia_
                 best_labels = kmeans.labels_
 
+        if best_labels is None:
+            raise ValueError("KMeans could not find a solution.")
+
         return best_inertia, best_labels
 
     def optimize(
@@ -921,16 +924,19 @@ class ExactKMeans:
         kmeanspp_cost: Optional[float] = None,
         kmeanspp_labels: Optional[np.ndarray] = None,
     ) -> Dict[str, Any]:
+
         if kmeanspp_cost is None and kmeanspp_labels is None:
             kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
-
-        if kmeanspp_labels is None and kmeanspp_cost is not None:
+        elif kmeanspp_labels is None and kmeanspp_cost is not None:
             raise ValueError(
                 "If kmeanspp_cost is provided, kmeanspp_labels must be provided as well."
             )
-
-        if kmeanspp_labels is not None and kmeanspp_cost is None:
+        elif kmeanspp_labels is not None and kmeanspp_cost is None:
             kmeanspp_cost = kmeans_cost(kmeanspp_labels, points=self.X, k=self.k)
+
+        assert (
+            kmeanspp_labels is not None
+        ), "KMeans++ labels must be either provided or computed before continuing."
 
         logger.info("Chosen initial KMeans++ solution with cost: %f", kmeanspp_cost)
 

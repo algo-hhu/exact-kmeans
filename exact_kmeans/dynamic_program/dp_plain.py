@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Optional
+from typing import Dict
 
 import numpy as np
 
@@ -83,9 +83,12 @@ def DP_recursion_print_part(
 
 def compute_bounds(
     n_points: int, k: int, lb: Dict[int, float], print_part: bool = False
-) -> Optional[np.ndarray]:
+) -> np.ndarray:
     if n_points == 0 or k == 0:
-        return None
+        raise ValueError(
+            f"Number of points (n={n_points}) "
+            f"and number of clusters (k={k}) must be greater than 0"
+        )
     r = DP_init(n_points, k, lb)
     if print_part:
         DP_recursion_print_part(n_points, k, lb, r)
