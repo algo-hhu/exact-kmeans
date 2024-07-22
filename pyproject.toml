@@ -4,10 +4,11 @@ version = "0.1.0"
 description = "Computes an optimal k-means solution for small instances and small k."
 authors = ["Melanie Schmidt <mschmidt@hhu.de>", "Daniel Schmidt <dschmidt@hhu.de>", "Giulia Baldini <giulia.baldini@hhu.de>", "Anna Arutyunova <anna.arutyunova@hhu.de>"]
 readme = "README.md"
+license = "LICENSE"
 packages = [
     { include = "exact_kmeans" },
-    { include = "config" }
 ]
+include = ["config", "images"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
