@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gurobipy as gp
 import numpy as np
+import pandas as pd
 import yaml
 from gurobipy import GRB
 from sklearn.cluster import KMeans
@@ -42,16 +43,19 @@ logger = logging.getLogger(__name__)
 class ExactKMeans:
     def __init__(
         self,
-        X: np.ndarray,
+        X: Union[np.ndarray, pd.DataFrame],
         k: int,
         config_file: Union[str, Path] = "config/default.yaml",
         cache_current_run_path: Optional[Path] = None,
         load_existing_run_path: Optional[Path] = None,
         kmeans_iterations: int = 100,
     ) -> None:
-        if not isinstance(X, np.ndarray):
+        if isinstance(X, pd.DataFrame):
+            self.X = X.values
+        elif isinstance(X, np.ndarray):
+            self.X = X
+        else:
             raise ValueError("Please convert the input data to a numpy array.")
-        self.X = X
         self.k = k
         self.n = len(X)
 
