@@ -52,7 +52,7 @@ iris = fetch_ucirepo(id=53)
 
 X = iris.data.features
 
-km = ExactKMeans(X=X, k=3)
+ilp = ExactKMeans(X=X, k=3)
 res = ilp.optimize()
 
 with open("output.json", "w") as f:
