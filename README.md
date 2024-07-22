@@ -18,6 +18,13 @@ pip install exact-kmeans
 ```python
 from exact_kmeans import ExactKMeans
 from exact_kmeans.util import JsonEncoder
+from ucimlrepo import fetch_ucirepo
+
+# For example, you can import data from the UCI repository
+# but you can also use your own dataset
+iris = fetch_ucirepo(id=53)
+
+X = iris.data.features
 
 km = ExactKMeans(X=X, k=3)
 res = ilp.optimize()
