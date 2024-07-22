@@ -398,7 +398,10 @@ class ExactKMeans:
         labels = np.zeros(len(self.X), dtype=int)
         for i in range(self._v, self._n):
             for ll in range(self._v, self._k):
-                if self.model.getVarByName(f"x[{i},{ll}]").x > 0:
+                var_by_name = self.model.getVarByName(f"x[{i},{ll}]")
+                if var_by_name is None:
+                    raise ValueError(f"Variable x[{i},{ll}] not found.")
+                if var_by_name.x > 0:  # type: ignore
                     labels[i - self._v] = ll - self._v
         return labels
 
@@ -558,7 +561,7 @@ class ExactKMeans:
         tightest_upper_bound: float,
         add_remaining_points: bool = False,
     ) -> Tuple[Union[str, float], float]:
-        objective_value = "infeasible"
+        objective_value: Union[str, float] = "infeasible"
         logger.info(f"Running ILP with cluster sizes: {cluster_sizes}")
         start = time()
         model = self.run_fixed_cluster_sizes_ilp(
@@ -1018,6 +1021,6 @@ class ExactKMeans:
 
         with open(results_folder / f"{result_name}.txt", "w") as of:
             vars = self.model.getVars()
-            vals = [v.x for v in vars]
+            vals = [v.x for v in vars]  # type: ignore
             for txt in print_variables(vars, vals):
                 of.write(txt)

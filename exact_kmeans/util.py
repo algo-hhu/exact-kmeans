@@ -51,7 +51,7 @@ def print_variables(var_list: List[gp.Var], float_list: List[float]) -> Generato
         yield print_variable(var_name, indices, val)
 
 
-def print_variable(var_name: str, indices: List[int], value: float) -> Optional[str]:
+def print_variable(var_name: str, indices: List[str], value: float) -> Optional[str]:
     if var_name == "x":
         if len(indices) == 1:
             i = indices[0]

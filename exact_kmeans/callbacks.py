@@ -20,16 +20,16 @@ def add_cuts(model: gp.Model, where: int, v: int, n: int, k: int) -> None:
                     zs = [
                         model.getVarByName(f"z[{i},{j},{ll},{m}]") for m in range(v, n)
                     ]
-                    relaxed_z = model.cbGetNodeRel(zs)
+                    relaxed_z = model.cbGetNodeRel(zs)  # type: ignore
                     y = model.getVarByName(f"y[{i},{j},{ll}]")
                     if not np.isclose(
-                        sum(relaxed_z), model.cbGetNodeRel(y), atol=0.001
+                        sum(relaxed_z), model.cbGetNodeRel(y), atol=0.001  # type: ignore
                     ):
                         logger.info(
                             f"Add cut for z[{i},{j},{ll},:] ({sum(relaxed_z)}) "
                             "and y[{i},{j},{ll}] ({model.cbGetNodeRel(y)})"
                         )
-                        model.cbCut(gp.quicksum(zs) == y)
+                        model.cbCut(gp.quicksum(zs) == y)  # type: ignore
 
 
 def variable_bounds(model: gp.Model, where: int) -> None:
