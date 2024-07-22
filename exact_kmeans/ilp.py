@@ -60,13 +60,6 @@ class ExactKMeans:
         self._k = self.k + self._v
         self.kmeans_iterations = kmeans_iterations
 
-        self.num_processes = multiprocessing.cpu_count()
-
-        logger.info(
-            f"Using {self.num_processes} processes for "
-            f"multiprocessing out of {multiprocessing.cpu_count()} total processes."
-        )
-
         self.changed_model_params = {}
         self.changed_bound_model_params = {}
         with Path(config_file).open("r") as f:
@@ -110,6 +103,21 @@ class ExactKMeans:
                 f"fill up cluster sizes to {self.k}."
             )
             self.ilp_version += "-fill-sizes"
+
+        self.num_processes = self.config.get(
+            "num_processes", multiprocessing.cpu_count()
+        )
+        if isinstance(self.num_processes, int):
+            self.num_processes = min(self.num_processes, multiprocessing.cpu_count())
+        elif isinstance(self.num_processes, float):
+            self.num_processes = int(self.num_processes * multiprocessing.cpu_count())
+        else:
+            raise ValueError("num_processes must be an integer or a float.")
+
+        logger.info(
+            f"Using {self.num_processes} processes for "
+            f"multiprocessing out of {multiprocessing.cpu_count()} total processes."
+        )
 
         self.cache_current_run_path = cache_current_run_path
 
