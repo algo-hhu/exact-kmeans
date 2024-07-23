@@ -770,34 +770,41 @@ class ExactKMeans:
         # Iterate through all the possible cluster sizes to find
         # the largest size that makes sense
         start = time()
-        # for i in range(2, self.n + 1):
-        #     m, objval = self.run_bound_ilp(i)
         start_bound = max(self.cluster_size_objectives.keys()) + 1
 
-        with multiprocessing.Pool(processes=self.num_processes) as pool:
-            try:
-                for m, objval in tqdm(
-                    pool.imap(
-                        self.run_single_cluster_ilp,
-                        range(start_bound, self.n + 1),
-                    ),
-                    total=self.n - start_bound + 1,
-                ):
-                    # If we ever get a larger cost than kmeans, we can stop
-                    if objval > self.kmeanspp_cluster_cost:
-                        logger.info(
-                            f"Bound {objval} for cluster size {m} "
-                            "is greater than kmeans cost "
-                            f"{self.kmeanspp_cluster_cost}, "
-                            "stopping..."
-                        )
-                        pool.terminate()
-                        break
-                    self.cluster_size_objectives[m] = objval
-            except KeyboardInterrupt:
-                logger.info("Received KeyboardInterrupt, stopping the pool.")
-                pool.terminate()
-                raise KeyboardInterrupt
+        greater_string = (
+            "Bound {objval} for cluster size {m} is greater than kmeans cost "
+            f"{self.kmeanspp_cluster_cost}, stopping..."
+        )
+
+        if self.num_processes == 1:
+            for i in range(start_bound, self.n + 1):
+                m, objval = self.run_single_cluster_ilp(i)
+                if objval > self.kmeanspp_cluster_cost:
+                    logger.info(greater_string.format(objval=objval, m=m))
+                    break
+                self.cluster_size_objectives[m] = objval
+        else:
+            with multiprocessing.Pool(processes=self.num_processes) as pool:
+                try:
+                    for m, objval in tqdm(
+                        pool.imap(
+                            self.run_single_cluster_ilp,
+                            range(start_bound, self.n + 1),
+                        ),
+                        total=self.n - start_bound + 1,
+                    ):
+                        # If we ever get a larger cost than kmeans, we can stop
+                        if objval > self.kmeanspp_cluster_cost:
+                            logger.info(greater_string.format(objval=objval, m=m))
+                            pool.terminate()
+                            break
+                        self.cluster_size_objectives[m] = objval
+                except KeyboardInterrupt:
+                    logger.info("Received KeyboardInterrupt, stopping the pool.")
+                    pool.terminate()
+                    raise KeyboardInterrupt
+
         logger.info(
             f"Lower bound computation for cluster sizes took {time() - start:.3f} seconds."
         )
