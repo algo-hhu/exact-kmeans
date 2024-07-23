@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v3
 
@@ -46,6 +46,18 @@ jobs:
       - name: Run Flake8
         run: |
           poetry run flake8 exact_kmeans/
-      - name: Run Tests
+
+
+      ## From here (https://github.com/Gurobi/gurobi-machinelearning/blob/main/.github/workflows/push.yml#L41C5-L50C78), thank you!
+      - shell: bash
+        id: write-license
+        env:
+          LICENSE: ${{ secrets.GUROBI_LICENSE }}
+        run: |
+          echo "$LICENSE" > $PWD/gurobi.lic
+          echo "grb_license_file=$PWD/gurobi.lic" >> $GITHUB_OUTPUT
+      - name: Run tests
+        env:
+          GRB_LICENSE_FILE: ${{ steps.write-license.outputs.grb_license_file }}
         run: |
           poetry run python -m unittest discover tests -v
