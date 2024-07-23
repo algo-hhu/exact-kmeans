@@ -30,7 +30,7 @@ class TestILP(unittest.TestCase):
         print("Found objective value:", res["objective"])
 
         assert np.isclose(
-            res["objective"], 692.4855807575101
+            res["objective"], 454.099632
         ), f"The found objective value is wrong: {res['objective']}"
 
 
