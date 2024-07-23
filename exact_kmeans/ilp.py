@@ -941,7 +941,7 @@ class ExactKMeans:
 
         return best_inertia, best_labels
 
-    def optimize(
+    def fit(
         self,
         kmeanspp_cost: Optional[float] = None,
         kmeanspp_labels: Optional[np.ndarray] = None,

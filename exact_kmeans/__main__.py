@@ -72,7 +72,7 @@ if __name__ == "__main__":
     )
 
     start = time()
-    res = ilp.optimize()
+    res = ilp.fit()
     ilp_time = time() - start
 
     if args.results_path is not None:
