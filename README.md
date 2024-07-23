@@ -10,13 +10,20 @@ Since our plain ILP solution to the problem was too slow, we implemented a branc
 The ILPs are implemented using [Gurobi](https://www.gurobi.com/).
 
 The algorithm works as follows:
-- We run $k$-means++ on the data to get an initial upper bound for the cost.
-- We try to find the largest cluster size $c_1$ that any cluster may have and that is less than the initial upper bound. We do this by solving an ILP (ILP#1).
-- We iterate through all possible cluster sizes $c_1, \ldots, c_k$ and compute for each of them a solution using an ILP (ILP#2). However, we don't actually iterate through all the sizes, but use a branch-and-bound algorithm to skip some of them. You can see an example of this in the tree in the "Plot the Branch and Bound Tree" section.
+- We run $k$-means++ on the data to get an initial upper bound for the cost of an optimal solution.
+- We try to find the largest cluster size $c_1$ that a cluster in the optimal solution may have. We use the fact that the cost of a cluster in the optimal solution is less than the initial upper bound. We do this by solving an ILP (ILP#1).
+- We iterate through all possible cluster sizes $c_1 \geq c_2 \ldots \geq c_k$ and compute for each of them a solution using an ILP (ILP#2). However, we don't actually iterate through all the sizes, but use a branch-and-bound algorithm to skip some of them if the cost exceeds the initial upper bound. You can see an example of this in the tree in the "Plot the Branch and Bound Tree" section.
 
-The idea of ILP#1 is to test what is the largest cluster size that any cluster may have. If we find a clustering that has a cluster size $c_1$ that produces a cost that is larger than the $k$-means++ solution, then we know that all cluster sizes $c_1, \ldots, c_k$ are infeasible.
+For both ILPs we drop two cruical constraints that any valid k-means solution must fulfill:
+- the constraint that every data point must be assigned to a cluster
+- the constraint that the number of clusters is $k$
+instead we add one constraint that forces the $k'\leq k$ clusters to be of some fixed sizes $c_1,\ldots, c_{k'}$.
 
-The idea of ILP#2 is to actually find the optimal solution that has cluster sizes $c_1, \ldots, c_k$. However, since we know that this solution will not be larger than the $k$-means++ solution, we can use the $k$-means++ solution as a constraint for the cost. This means that we may obtain unfeasible solutions, but they are usually found faster than computing the optimal solution and then discarding the ones with a cost larger than the $k$-means++ solution.
+Both ILPs compute solutions where the number of clusters is possibly less than $k$ and some points are not clustered.
+
+The idea of ILP#1 is to test what is the largest cluster size that a cluster in the optimal solution may have. For a fixed cluster size $c_1$ ILP#1 computes the smallest cost that a cluster of size $c_1$ can have. If this cost is already larger than the initial upper bound, then we know that the cluster sizes of an optimal solution must be all less than $c_1$.
+
+The idea of ILP#2 is similar to ILP#1 with the only difference that we are allowed to fix more than one cluster size. For fixed cluster sizes $c_1, \ldots, c_{k'}$ where $k'\leq k$ we compute the smallest cost that a solution with cluster sizes $c_1, \ldots, c_{k'}$ may have. However, since we know that this solution will not be larger than the $k$-means++ solution, we can use the $k$-means++ solution as a constraint for the cost. This means that we may obtain unfeasible solutions, but they are usually found faster than computing the optimal solution and then discarding the ones with a cost larger than the $k$-means++ solution.
 
 We use the ILP#2 to also compute an optimal solution for the cluster sizes $c_1, \ldots, c_i$ with $i \leq k$. At this point we are a branch node in the tree (i.e., we have not yet found $k$ cluster sizes), and we want to see if there can be any solution $c_1, \ldots, c_i$ that has a cost that is less than the $k$-means++ solution. If we find such a solution, we can continue to branch and find the optimal solution for $c_1, \ldots, c_{i+1}$.
 
