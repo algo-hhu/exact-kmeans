@@ -2,6 +2,7 @@ import logging
 import sys
 import unittest
 
+import numpy as np
 import pandas as pd
 
 from exact_kmeans import ExactKMeans
@@ -28,8 +29,8 @@ class TestILP(unittest.TestCase):
 
         print("Found objective value:", res["objective"])
 
-        assert (
-            res["objective"] == 1276.8469883712723
+        assert np.isclose(
+            res["objective"], 1276.8469883712723
         ), f"The found objective value is wrong: {res['objective']}"
 
 
