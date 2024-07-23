@@ -106,7 +106,13 @@ class ExactKMeans:
 
         self.ilp_branching_until_level = 0
         if self.config.get("branching_levels", False):
-            self.ilp_branching_until_level = int(self.config.get("branching_levels"))
+            # This should be at most k - 2
+            # At k we already have the final cluster size that we are testing
+            # At k - 1 we consider the last cluster size before filling with everything else
+            # So we only compute the branching ILP until k - 2
+            self.ilp_branching_until_level = min(
+                int(self.config.get("branching_levels")), self.k - 2
+            )
             logger.info(
                 "Computing ILP on branching cluster sizes "
                 f"when the cluster sizes are less than {self.ilp_branching_until_level}."
@@ -714,7 +720,12 @@ class ExactKMeans:
                 )
                 # Run the ILP if we have more than one cluster size to
                 # see if we should branch from here
-                if len(current_cluster_sizes) <= self.ilp_branching_until_level:
+                # It does not make sense to run it if we only have one value
+                # Because we have done it before with the other ILP
+                if (
+                    len(current_cluster_sizes) > 2
+                    and len(current_cluster_sizes) <= self.ilp_branching_until_level
+                ):
                     if self.config.get("fill_cluster_sizes", False):
                         test_sizes = self.fix_rem_cluster_sizes(current_cluster_sizes)
                     else:
@@ -737,26 +748,28 @@ class ExactKMeans:
                             tightest_upper_bound.value,
                             add_remaining_points=True,
                         )
-                    if not self.config.get("fill_cluster_sizes", False) and isinstance(
-                        found_bound, float
-                    ):
-                        n_fixed_points += search_end
-                        k_fixed += 1
-                        dp_bound = (
-                            found_bound
-                            + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
-                        )
-                        logger.info(
-                            f"Bound for {test_sizes} ({found_bound}) with DP bound ({dp_bound})"
-                        )
-                        if dp_bound > tightest_upper_bound.value:
-                            logger.info(
-                                f"Bound for {test_sizes} ({found_bound}) "
-                                f"with DP bound ({dp_bound}) "
-                                "is greater than the current upper bound "
-                                f"{tightest_upper_bound.value}, skipping..."
-                            )
-                            found_bound = "ilp_sum_bound_greater"
+
+                    # TODO: This is still not working properly
+                    # if not self.config.get("fill_cluster_sizes", False) and isinstance(
+                    #     found_bound, float
+                    # ):
+                    #     n_fixed_points += search_end
+                    #     k_fixed += 1
+                    #     dp_bound = (
+                    #         found_bound
+                    #         + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
+                    #     )
+                    #     logger.info(
+                    #     f"Bound for {test_sizes} ({found_bound}) with DP bound ({dp_bound})"
+                    #     )
+                    #     if dp_bound > tightest_upper_bound.value:
+                    #         logger.info(
+                    #             f"Bound for {test_sizes} ({found_bound}) "
+                    #             f"with DP bound ({dp_bound}) "
+                    #             "is greater than the current upper bound "
+                    #             f"{tightest_upper_bound.value}, skipping..."
+                    #         )
+                    #         found_bound = "ilp_sum_bound_greater"
                 if found_bound not in {"infeasible", "ilp_sum_bound_greater"}:
                     found_bound = "branch"
                     # If the program is feasible and we have less than k clusters
@@ -900,6 +913,7 @@ class ExactKMeans:
 
         best_tmp_obj: Optional[float] = None
         best_sizes: Optional[np.ndarray] = None
+
         for obj, _, sizes in self.processed_cluster_sizes:
             if isinstance(obj, float) and (best_tmp_obj is None or obj < best_tmp_obj):
                 best_tmp_obj = obj

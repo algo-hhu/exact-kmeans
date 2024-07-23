@@ -62,6 +62,18 @@ res = ilp.fit()
 
 with open("output.json", "w") as f:
     json.dump(res, f, indent=4, cls=JsonEncoder)
+
+# You can also print the branch and bound tree to visualize the decisions made by the algorithm
+# Below you find an example of the tree and meaning of the colors
+from exact_kmeans.plot_tree import plot
+
+plot(
+  nodes=res["processed_cluster_sizes"],
+  filename="test",
+  plot_folder="plots",
+  optimal_objective=res["objective"],
+)
+
 ```
 
 ## Command Line
@@ -97,7 +109,7 @@ Your `data-path` should be a file with a header containing only the comma-separa
 Assuming that you have run the program and stored the results in a JSON file, you can plot the tree produced by the algorithm.
 
 ```bash
-poetry run python plot_tree.py --output-json output.json --plot-folder plots
+poetry run python exact_kmeans.plot_tree.py --output-json output.json --plot-folder plots
 ```
 
 This will create a tree that looks like this:
