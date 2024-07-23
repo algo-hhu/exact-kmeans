@@ -706,7 +706,7 @@ class ExactKMeans:
                 )
                 # Run the ILP if we have more than one cluster size to
                 # see if we should branch from here
-                if len(current_cluster_sizes) < self.ilp_branching_until_level:
+                if len(current_cluster_sizes) <= self.ilp_branching_until_level:
                     if self.config.get("fill_cluster_sizes", False):
                         test_sizes = self.fix_rem_cluster_sizes(current_cluster_sizes)
                     else:

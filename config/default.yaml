@@ -4,7 +4,7 @@ num_processes: 0.5
 branch_priorities: true
 replace_min: true
 branching_ilp: true
-branching_levels: 5
+branching_levels: 2
 fill_cluster_sizes: false
 
 model_params:
