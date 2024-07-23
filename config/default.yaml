@@ -1,6 +1,5 @@
 ilp_version: v4
 
-num_processes: 0.5
 branch_priorities: true
 replace_min: true
 branching_ilp: true
