@@ -51,9 +51,7 @@ class ExactKMeans:
         self,
         X: Union[np.ndarray, pd.DataFrame],
         k: int,
-        config_file: Union[str, Path] = Path(
-            os.path.split(__file__)[0]
-        ).parent.resolve()
+        config_file: Union[str, Path] = Path(__file__).parent.resolve()
         / "config"
         / "default.yaml",
         cache_current_run_path: Optional[Path] = None,
@@ -68,8 +66,6 @@ class ExactKMeans:
             raise ValueError("Please convert the input data to a numpy array.")
         self.k = k
         self.n = len(X)
-
-        # self.dmax = compute_largest_distance(X)
 
         self._v = 1
         self._n = self.n + self._v

@@ -39,7 +39,9 @@ if __name__ == "__main__":
 
     parser.add_argument("--k", type=int, required=True)
     parser.add_argument("--data-path", type=Path, required=True)
-    parser.add_argument("--config-file", type=Path, default="config/default.yaml")
+    parser.add_argument(
+        "--config-file", type=Path, default="exact_kmeans/config/default.yaml"
+    )
     parser.add_argument("--kmeans-iterations", type=int, default=100)
     parser.add_argument("--results-path", type=Path, default=None)
     parser.add_argument("--load-existing-run-path", type=Path, default=None)

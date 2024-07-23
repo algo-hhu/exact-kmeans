@@ -25,7 +25,7 @@ ILP#2 gets cluster sizes $c_1,\ldots, c_i$ with $2\leq i\leq k$ as input. If $c_
 
 To search for the cluster sizes of an optimal solution we use a branch and bound approach. In a branch node of level $i$ the $i$ largest cluster sizes $c_1, \ldots, c_i$ are already fixed. The variables `branching_levels` and `fill_cluster_sizes` define the behavior on these branching nodes. If `branching_levels` is greater equal to the level $i$ of the node then we use ILP#2 to bound the current cost and decide if we branch, otherwise we always branch on this node. If the variable `fill_cluster_sizes` is set to true we compute the smallest possible remaining cluster sizes $c_{i+1},\ldots, c_{k}$ and run ILP#2 with cluster sizes $c_1,\ldots, c_k$. If the variable `fill_cluster_sizes` is set to false we run ILP#2 only with the fixed cluster sizes $c_1,\ldots, c_i$. Setting `fill_cluster_sizes` to true may lead to less branching but can increase the solving time of ILP#2.
 
-To customize the runs, you can create a config file. The default config file is [`config/default.yaml`](config/default.yaml). You can also pass a different config file as an argument.
+To customize the runs, you can create a config file. The default config file is [`exact_kmeans/config/default.yaml`](exact_kmeans/config/default.yaml). You can also pass a different config file as an argument.
 - `num_processes` (integer or float) sets the number of processes used. The algorithm was parallelized using the `multiprocessing` package, so you can set the number of processes that you want to use. If you use an integer, at most that number of processes will be taken, otherwise if you use a float, it will be a fraction of the available CPUs. If the parameter is not passed, the algorithm will use all available CPUs.
 - `bound_model_params` are the arguments that are passed to the ILP#1 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
 - `model_params` are the arguments that are passed to the ILP#2 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
@@ -90,7 +90,7 @@ poetry install
 
 Run the program
 ```bash
-poetry run python -m exact_kmeans --data-path iris.csv --verbose --results-path test/iris.json --k 3 --config-file config/default.yaml
+poetry run python -m exact_kmeans --data-path iris.csv --verbose --results-path test/iris.json --k 3 --config-file exact_kmeans/config/default.yaml
 ```
 
 Your `data-path` should be a file with a header containing only the comma-separated data points. Example:
