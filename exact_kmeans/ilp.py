@@ -110,9 +110,7 @@ class ExactKMeans:
             )
             self.ilp_version += "-fill-sizes"
 
-        self.num_processes = self.config.get(
-            "num_processes", multiprocessing.cpu_count()
-        )
+        self.num_processes = self.config.get("num_processes", 1)
         if isinstance(self.num_processes, int):
             self.num_processes = min(self.num_processes, multiprocessing.cpu_count())
         elif isinstance(self.num_processes, float):
