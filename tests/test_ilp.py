@@ -24,7 +24,7 @@ logging.getLogger().setLevel(logging.INFO)
 class TestILP(unittest.TestCase):
     def test_circles(self) -> None:
         X = pd.read_csv("tests/datasets/circlesuneven.csv")
-        ilp = ExactKMeans(X=X, k=4)
+        ilp = ExactKMeans(X=X, k=3)
         res = ilp.fit()
 
         print("Found objective value:", res["objective"])
