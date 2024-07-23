@@ -33,5 +33,6 @@ jobs:
         variables: |
           {
             "PROJECT": "exact-kmeans",
-            "GIT_HASH": "${{ github.event.pull_request.head.sha || github.sha }}"
+            "GIT_HASH": "${{ github.event.pull_request.head.sha || github.sha }}",
+            "PIPELINES": "ubuntu"
           }
