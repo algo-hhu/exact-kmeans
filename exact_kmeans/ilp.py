@@ -777,6 +777,8 @@ class ExactKMeans:
             f"{self.kmeanspp_cluster_cost}, stopping..."
         )
 
+        # This is for ease of understanding if the problem is with multiprocessing
+        # or with gurobi when the program does not run
         if self.num_processes == 1:
             for i in range(start_bound, self.n + 1):
                 m, objval = self.run_single_cluster_ilp(i)
