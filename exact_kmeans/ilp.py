@@ -898,15 +898,16 @@ class ExactKMeans:
         while not output_queue.empty():
             self.processed_cluster_sizes.append(output_queue.get())
 
-        best_tmp_obj, _, best_sizes = min(
-            self.processed_cluster_sizes,
-            key=lambda x: x[0] if not isinstance(x[0], str) else np.inf,
-        )
-        logger.info(f"best_tmp_obj: {best_tmp_obj}, best_sizes: {best_sizes}")
+        best_tmp_obj: Optional[float] = None
+        best_sizes: Optional[np.ndarray] = None
+        for obj, _, sizes in self.processed_cluster_sizes:
+            if isinstance(obj, float) and (best_tmp_obj is None or obj < best_tmp_obj):
+                best_tmp_obj = obj
+                best_sizes = sizes
 
-        assert not np.isinf(
-            best_tmp_obj
-        ), "No feasible solution was found during Branch&Bound."
+        assert (
+            best_sizes is not None
+        ), f"No feasible solution was found during Branch&Bound: {self.processed_cluster_sizes}"
 
         if not np.isclose(best_tmp_obj, best_obj.value):
             logger.error(
