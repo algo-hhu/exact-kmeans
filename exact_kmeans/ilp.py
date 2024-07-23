@@ -19,7 +19,13 @@ from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 import exact_kmeans.dynamic_program.dp_plain as dp
-from exact_kmeans.util import JsonEncoder, get_distance, kmeans_cost, print_variables
+from exact_kmeans.util import (
+    JsonEncoder,
+    compute_centers,
+    get_distance,
+    kmeans_cost,
+    print_variables,
+)
 
 # class GurobiFilter(logging.Filter):
 #     def __init__(self, name="GurobiFilter"):
@@ -1014,11 +1020,14 @@ class ExactKMeans:
             f"compared to initial bound {self.kmeanspp_cluster_cost}."
         )
 
-        labels = self.get_labels()
+        self.labels_ = self.get_labels()
+        self.cluster_centers_ = compute_centers(self.X, self.labels_)
+        self.inertia_ = self.model.ObjVal
 
         return {
             "initial_labels": initial_labels,
-            "labels": labels,
+            "labels": self.labels_,
+            "centers": self.cluster_centers_,
             "model": self.model,
             "objective": self.model.ObjVal,
             "best_cluster_sizes": best_sizes,

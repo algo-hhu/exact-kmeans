@@ -120,3 +120,12 @@ def kmeans_cost(cluster_labels: np.ndarray, points: np.ndarray, k: int) -> float
         cost += get_distance(centroids[label], points[i])
 
     return cost
+
+
+def compute_centers(points: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    k = max(labels) + 1
+    centers = np.zeros((k, points.shape[1]))
+    for i in range(k):
+        centers[i] = points[labels == i].mean(axis=0)
+
+    return centers
