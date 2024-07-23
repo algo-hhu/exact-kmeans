@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "k-means-ilp"
+name = "exact-kmeans"
 version = "0.1.0"
 description = "Computes an optimal k-means solution for small instances and small k."
 authors = ["Melanie Schmidt <mschmidt@hhu.de>", "Daniel Schmidt <dschmidt@hhu.de>", "Giulia Baldini <giulia.baldini@hhu.de>", "Anna Arutyunova <anna.arutyunova@hhu.de>"]
