@@ -14,18 +14,22 @@ The algorithm works as follows:
 - We try to find the largest cluster size $c_1$ that a cluster in the optimal solution may have. We use the fact that the cost of a cluster in the optimal solution is less than the initial upper bound. We do this by solving an ILP (ILP#1).
 - We iterate through all possible cluster sizes $c_1 \geq c_2 \ldots \geq c_k$ and compute for each of them a solution using an ILP (ILP#2). However, we don't actually iterate through all the sizes, but use a branch-and-bound algorithm to skip some of them if the cost exceeds the initial upper bound. You can see an example of this in the tree in the "Plot the Branch and Bound Tree" section.
 
-For both ILPs we drop two cruical constraints that any valid k-means solution must fulfill:
-- the constraint that every data point must be assigned to a cluster
+For both ILPs we drop two cruical constraints that any valid $k$-means solution must fulfill:
+- the constraint that every data point must be part of a cluster
 - the constraint that the number of clusters is $k$
-instead we add one constraint that forces the $k'\leq k$ clusters to be of some fixed sizes $c_1,\ldots, c_{k'}$.
+instead we add one constraint that forces the $i\leq k$ clusters to be of some fixed sizes $c_1,\ldots, c_{i}$.
 
-Both ILPs compute solutions where the number of clusters is possibly less than $k$ and some points are not clustered.
+So both ILPs get cluster sizes $c_1,\ldots, c_i$ with $i\leq k$ as input and compute an optimal solutions to the following modification of the $k$-means problem:
+- the number of clusters is $i$
+- the clusters have sizes $c_1,\ldots, c_i$
+- if $n$ is the number of data points $n-c_1-\ldots -c_i$ points are not part of any cluster
 
-The idea of ILP#1 is to test what is the largest cluster size that a cluster in the optimal solution may have. For a fixed cluster size $c_1$ ILP#1 computes the smallest cost that a cluster of size $c_1$ can have. If this cost is already larger than the initial upper bound, then we know that the cluster sizes of an optimal solution must be all less than $c_1$.
+ILP#1 gets one single cluster size $c_1$ as input and computes an optimal solution with one single cluster of size $c_1$.
+ILP#2 gets cluster sizes $c_1,\ldots, c_i$ with $2\leq i\leq k$ as input. If $c_1,\ldots, c_i$ are also cluster sizes which are represented in the optimal solution the cost that ILP#2 computes should be less than the initial upper bound. We add a contraint to ILP#2 bounding the cost by initial upper bound. Therfore either ILP#2 is infeasible or it outputs an optimal solution of $i$ clusters with sizes $c_1,\ldots, c_i$ and cost smaller than initial upper bound.
 
-The idea of ILP#2 is similar to ILP#1 with the only difference that we are allowed to fix more than one cluster size. For fixed cluster sizes $c_1, \ldots, c_{k'}$ where $k'\leq k$ we compute the smallest cost that a solution with cluster sizes $c_1, \ldots, c_{k'}$ may have. However, since we know that this solution will not be larger than the $k$-means++ solution, we can use the $k$-means++ solution as a constraint for the cost. This means that we may obtain unfeasible solutions, but they are usually found faster than computing the optimal solution and then discarding the ones with a cost larger than the $k$-means++ solution.
+ILP#1 is used to compute a lower bound to the cost of cluster of size $c_1$. If this cost is already larger than the initial upper bound, then we know that the cluster sizes of an optimal solution must be all less than $c_1$. Therfore we can discard all cluster sizes greater equal $c_1$ when searching for the cluster sizes of an optimal solution.
 
-We use the ILP#2 to also compute an optimal solution for the cluster sizes $c_1, \ldots, c_i$ with $i \leq k$. At this point we are a branch node in the tree (i.e., we have not yet found $k$ cluster sizes), and we want to see if there can be any solution $c_1, \ldots, c_i$ that has a cost that is less than the $k$-means++ solution. If we find such a solution, we can continue to branch and find the optimal solution for $c_1, \ldots, c_{i+1}$.
+To search for the cluster sizes of an optimal solution we use a brach and bound approach. In a branch node of level $i$ the $i$ largest cluster sizes $c_1, \ldots, c_i$ are already fixed. The variable `branching_levels` and `fill_cluster_sizes` define the behavior on these branching nodes. If `branching_levels` is greater equal to the level $i$ of the node then we use ILP#2 to bound the current cost and decide if we branch, otherwise we always branch. If the variable `fill_cluster_sizes` is set to true we compute the smallest possible remaining cluster sizes $c_{i+1},\ldots, c_{k}$ and run ILP#2 with cluster sizes $c_1,\ldots, c_k$. If the variable `fill_cluster_sizes` is set to false we run ILP#2 only with the fixed cluster sizes $c_1,\ldots, c_i$. Setting `fill_cluster_sizes` to true may lead to less branching but can increase the solving time of ILP#2.
 
 To customize the runs, you can create a config file. The default config file is [`config/default.yaml`](config/default.yaml). You can also pass a different config file as an argument.
 - `num_processes` (integer or float) sets the number of processes used. The algorithm was parallelized using the `multiprocessing` package, so you can set the number of processes that you want to use. If you use an integer, at most that number of processes will be taken, otherwise if you use a float, it will be a fraction of the available CPUs. If the parameter is not passed, the algorithm will use all available CPUs.
@@ -33,8 +37,8 @@ To customize the runs, you can create a config file. The default config file is 
 - `model_params` are the arguments that are passed to the ILP#2 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
 - `branching_priorities` (true/false) enables the use of branching priorities. If true, the priority of the $x$ variable will be higher than the other variables. According to our tests, this speeds up the solving.
 - `replace_min` (true/false) replaces a minimum constraint with a linear version. According to our tests, this speeds up the solving.
-- `branching_levels` (integer) sets the number of cluster sizes $[c_1, \ldots, c_i]$ with $i \leq k$ that will be tested using ILP#2. Since this increases the number of ILPs that are computed, it may only make sense at the very beginning of the tree.
-- `fill_cluster_sizes` (true/false) sets whether the ILP#2 model TODO
+- `branching_levels` (integer) Sets the maximum level of a branching node where we run ILP#2 to bound the cost. Since this can increase the number of ILPs that are computed, it may only make sense for small levels.
+- `fill_cluster_sizes` (true/false) If set to false we run ILP#2  only with cluster sizes fixed at the branching node. If set to true we fill the cluster sizes up to $k$. Setting the vraible to true results in a larger computation time for ILP#2 but may result in less branching, which can save time. For small $k$ we recommend setting it to false and for large $k$ we recomment seting it to true.
 
 
 ## Installation
