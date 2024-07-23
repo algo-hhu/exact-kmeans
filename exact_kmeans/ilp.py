@@ -920,7 +920,7 @@ class ExactKMeans:
                 best_sizes = sizes
 
         assert (
-            best_sizes is not None
+            best_sizes is not None and best_tmp_obj is not None
         ), f"No feasible solution was found during Branch&Bound: {self.processed_cluster_sizes}"
 
         if not np.isclose(best_tmp_obj, best_obj.value):
