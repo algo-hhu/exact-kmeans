@@ -7,7 +7,7 @@
 
 This package computes exact solutions to the $k$-means problem using integer linear programming (ILP).
 Since our plain ILP solution to the problem was too slow, we implemented a branch-and-bound algorithm that computes multiple ILP solutions for different cluster sizes to find the optimal cluster sizes $[c_1, \ldots, c_k]$.
-The ILPs are implemented using [Gurobi](https://www.gurobi.com/).
+The ILPs are implemented using [Gurobi](https://www.gurobi.com/). You will need a [Gurobi license](https://www.gurobi.com/downloads/) to be able to run the code.
 
 The algorithm works as follows:
 - We run $k$-means++ on the data to get an initial upper bound for the cost of an optimal solution.
@@ -133,6 +133,11 @@ Run the tests
 ```bash
 poetry run python -m unittest discover tests -v
 ```
+
+## Disclaimer
+
+This package requires the Gurobi Optimizer, which is a commercial optimization solver. Users must obtain their own licenses for Gurobi.
+Gurobi License: You are responsible for complying with all Gurobi licensing terms. For more information, visit the [Gurobi Licensing Page](https://www.gurobi.com/academia/academic-program-and-licenses/).
 
 <!--
 ## Citation
