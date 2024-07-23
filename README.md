@@ -58,7 +58,7 @@ iris = fetch_ucirepo(id=53)
 X = iris.data.features
 
 ilp = ExactKMeans(X=X, k=3)
-res = ilp.optimize()
+res = ilp.fit()
 
 with open("output.json", "w") as f:
     json.dump(res, f, indent=4, cls=JsonEncoder)

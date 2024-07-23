@@ -23,14 +23,14 @@ logging.getLogger().setLevel(logging.INFO)
 
 class TestILP(unittest.TestCase):
     def test_circles(self) -> None:
-        X = pd.read_csv("tests/datasets/circlesuneven_4_20_0.csv")
+        X = pd.read_csv("tests/datasets/circlesuneven.csv")
         ilp = ExactKMeans(X=X, k=4)
-        res = ilp.optimize()
+        res = ilp.fit()
 
         print("Found objective value:", res["objective"])
 
         assert np.isclose(
-            res["objective"], 1276.8469883712723
+            res["objective"], 692.4855807575101
         ), f"The found objective value is wrong: {res['objective']}"
 
 
