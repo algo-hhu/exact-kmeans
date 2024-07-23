@@ -51,7 +51,9 @@ class ExactKMeans:
         self,
         X: Union[np.ndarray, pd.DataFrame],
         k: int,
-        config_file: Union[str, Path] = Path(__file__).parent.parent.resolve()
+        config_file: Union[str, Path] = Path(
+            os.path.split(__file__)[0]
+        ).parent.resolve()
         / "config"
         / "default.yaml",
         cache_current_run_path: Optional[Path] = None,
