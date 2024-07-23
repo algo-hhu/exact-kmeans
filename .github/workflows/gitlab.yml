@@ -34,5 +34,5 @@ jobs:
           {
             "PROJECT": "exact-kmeans",
             "GIT_HASH": "${{ github.event.pull_request.head.sha || github.sha }}",
-            "PIPELINES": "ubuntu,ventura"
+            "PIPELINES": "ubuntu,debian,ventura,monterey"
           }
