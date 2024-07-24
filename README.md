@@ -149,7 +149,7 @@ poetry run python -m unittest discover tests -v
 ## Disclaimer
 
 This package requires the Gurobi Optimizer, which is a commercial optimization solver. Users must obtain their own licenses for Gurobi.
-Gurobi License: You are responsible for complying with all Gurobi licensing terms. For more information, visit the [Gurobi Licensing Page](https://www.gurobi.com/academia/academic-program-and-licenses/).
+You are responsible for complying with all Gurobi licensing terms. For more information, visit the [Gurobi Licensing Page](https://www.gurobi.com/academia/academic-program-and-licenses/).
 
 <!--
 ## Citation
