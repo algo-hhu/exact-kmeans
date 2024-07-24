@@ -89,7 +89,7 @@ if __name__ == "__main__":
             "processed_cluster_sizes": ilp.processed_cluster_sizes,
             "changed_model_params": ilp.changed_model_params,
             "changed_bound_params": ilp.changed_bound_model_params,
-            "optimal": ilp.model.Status == 2 if ilp.model is not None else None,
+            "optimal": ilp.model.Status == 2 if ilp.model is not None else False,
             "git_hash": get_git_hash(),
         }
         for var_name, var in [
