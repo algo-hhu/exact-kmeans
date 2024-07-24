@@ -71,7 +71,7 @@ class ExactKMeans:
         for key, value in self.config["bound_model_params"].items():
             self.changed_bound_model_params[key] = value
 
-        self.tolerance_value = 0
+        self.tolerance_value = 1e-10
         for param in self.changed_model_params:
             if "tol" in param.lower():
                 self.tolerance_value = max(
@@ -470,7 +470,7 @@ class ExactKMeans:
             f"Objective for cluster size {m}: {model.ObjVal} "
             f"computed in {time() - start:.3f} seconds."
         )
-        obj = model.ObjVal
+        obj = model.ObjVal - self.tolerance_value
         del model
 
         return m, obj
