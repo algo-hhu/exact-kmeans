@@ -709,7 +709,7 @@ class ExactKMeans:
                 # It does not make sense to run it if we only have one value
                 # Because we have done it before with the other ILP
                 if (
-                    len(current_cluster_sizes) > 2
+                    len(current_cluster_sizes) >= 2
                     and len(current_cluster_sizes) <= self.ilp_branching_until_level
                 ):
                     if self.config.get("fill_cluster_sizes", False):
