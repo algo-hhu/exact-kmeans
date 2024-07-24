@@ -109,7 +109,7 @@ Your `data-path` should be a file with a header containing only the comma-separa
 Assuming that you have run the program and stored the results in a JSON file, you can plot the tree produced by the algorithm.
 
 ```bash
-poetry run python exact_kmeans.plot_tree.py --output-json output.json --plot-folder plots
+poetry run python -m exact_kmeans.plot_tree --output-json output.json --plot-folder plots
 ```
 
 This will create a tree that looks like this:

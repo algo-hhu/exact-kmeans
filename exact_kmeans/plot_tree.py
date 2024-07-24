@@ -83,7 +83,7 @@ if __name__ == "__main__":
         jj = json.load(f)
     plot(
         nodes=jj["processed_cluster_sizes"],
-        optimal_objective=jj["optimal_objective"],
+        optimal_objective=jj["objective"] if "objective" in jj else None,
         filename=args.output_json.name,
         plot_folder=args.plot_folder,
     )
