@@ -57,8 +57,8 @@ iris = fetch_ucirepo(id=53)
 
 X = iris.data.features
 
-ilp = ExactKMeans(X=X, k=3)
-res = ilp.fit()
+ilp = ExactKMeans(n_clusters=3)
+res = ilp.fit(X)
 
 with open("output.json", "w") as f:
     json.dump(res, f, indent=4, cls=JsonEncoder)
@@ -68,10 +68,10 @@ with open("output.json", "w") as f:
 from exact_kmeans.plot_tree import plot
 
 plot(
-  nodes=res["processed_cluster_sizes"],
+  nodes=res.processed_cluster_sizes,
   filename="test",
   plot_folder="plots",
-  optimal_objective=res["objective"],
+  optimal_objective=res.model.ObjVal,
 )
 
 ```

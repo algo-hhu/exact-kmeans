@@ -8,7 +8,7 @@ import queue
 from itertools import chain, zip_longest
 from pathlib import Path
 from time import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import gurobipy as gp
 import numpy as np
@@ -49,8 +49,7 @@ logger = logging.getLogger(__name__)
 class ExactKMeans:
     def __init__(
         self,
-        X: Union[np.ndarray, pd.DataFrame],
-        k: int,
+        n_clusters: int,
         config_file: Union[str, Path] = Path(__file__).parent.resolve()
         / "config"
         / "default.yaml",
@@ -58,17 +57,8 @@ class ExactKMeans:
         load_existing_run_path: Optional[Path] = None,
         kmeans_iterations: int = 100,
     ) -> None:
-        if isinstance(X, pd.DataFrame):
-            self.X = X.values
-        elif isinstance(X, np.ndarray):
-            self.X = X
-        else:
-            raise ValueError("Please convert the input data to a numpy array.")
-        self.k = k
-        self.n = len(X)
-
+        self.k = n_clusters
         self._v = 1
-        self._n = self.n + self._v
         self._k = self.k + self._v
         self.kmeans_iterations = kmeans_iterations
 
@@ -137,6 +127,8 @@ class ExactKMeans:
 
         self.cache_current_run_path = cache_current_run_path
 
+        self.dp_bounds: Optional[np.ndarray] = None
+
         if load_existing_run_path is not None and load_existing_run_path.exists():
             logger.info(f"Loading existing run from {load_existing_run_path}.")
 
@@ -144,8 +136,6 @@ class ExactKMeans:
                 self.existing_run: Dict[str, Any] = json.load(f)
             if "db_bounds" in self.existing_run:
                 self.db_bounds = np.array(self.existing_run["dp_bounds"])
-            else:
-                self.dp_bounds = np.zeros((self.n + 1, self.k + 1))
             if "cluster_size_objectives" in self.existing_run:
                 self.cluster_size_objectives = {
                     int(k): v
@@ -168,7 +158,6 @@ class ExactKMeans:
             else:
                 self.processed_cluster_sizes = []
         else:
-            self.dp_bounds = np.zeros((self.n + 1, self.k + 1))
             self.cluster_size_objectives = {0: 0, 1: 0}
             self.kmeanspp_cluster_cost = np.inf
             self.processed_cluster_sizes = []
@@ -674,6 +663,7 @@ class ExactKMeans:
 
             # Lower bound on the cost of a clustering with cluster_sizes as constraint,
             # We use the results from the DP to find a better lower bound
+            assert self.dp_bounds is not None, "DP bounds have not been computed."
             sum_bound = (
                 sum(self.cluster_size_objectives[m] for m in current_cluster_sizes)
                 + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
@@ -745,7 +735,7 @@ class ExactKMeans:
                             add_remaining_points=True,
                         )
 
-                    # TODO: This is still not working properly
+                    # # TODO: This is still not working properly
                     # if not self.config.get("fill_cluster_sizes", False) and isinstance(
                     #     found_bound, float
                     # ):
@@ -958,9 +948,21 @@ class ExactKMeans:
 
     def fit(
         self,
+        X: Union[np.ndarray, pd.DataFrame],
+        y: Any = None,
+        sample_weight: Optional[Sequence[float]] = None,
         kmeanspp_cost: Optional[float] = None,
         kmeanspp_labels: Optional[np.ndarray] = None,
-    ) -> Dict[str, Any]:
+    ) -> "ExactKMeans":
+
+        if isinstance(X, pd.DataFrame):
+            self.X = X.values
+        elif isinstance(X, np.ndarray):
+            self.X = X
+        else:
+            raise ValueError("Please convert the input data to a numpy array.")
+        self.n = len(X)
+        self._n = self.n + self._v
 
         if kmeanspp_cost is None and kmeanspp_labels is None:
             kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
@@ -978,13 +980,13 @@ class ExactKMeans:
         logger.info("Chosen initial KMeans++ solution with cost: %f", kmeanspp_cost)
 
         try:
-            initial_labels, kmeanspp_sizes = self.sort_labels(kmeanspp_labels)
+            self.initial_labels, kmeanspp_sizes = self.sort_labels(kmeanspp_labels)
             self.kmeanspp_cluster_cost = kmeanspp_cost
 
             self.compute_cluster_size_objectives()
 
             # Construct lower bounds for clustering sizes using the dynamic program
-            if self.dp_bounds.sum() == 0:
+            if self.dp_bounds is None or self.dp_bounds.sum() == 0:
                 self.dp_bounds = dp.compute_bounds(
                     self.n, self.k, self.cluster_size_objectives
                 )
@@ -1002,7 +1004,9 @@ class ExactKMeans:
             )
 
             existing_run = {
-                "dp_bounds": self.dp_bounds.tolist(),
+                "dp_bounds": self.dp_bounds.tolist()
+                if self.dp_bounds is not None
+                else [],
                 "cluster_size_objectives": self.cluster_size_objectives,
                 "optimal_kmeanspp_cluster_cost": self.kmeanspp_cluster_cost,
                 "processed_cluster_sizes": self.processed_cluster_sizes,
@@ -1038,17 +1042,9 @@ class ExactKMeans:
         self.labels_ = self.get_labels()
         self.cluster_centers_ = compute_centers(self.X, self.labels_)
         self.inertia_ = self.model.ObjVal
+        self.best_cluster_sizes = best_sizes
 
-        return {
-            "initial_labels": initial_labels,
-            "labels": self.labels_,
-            "centers": self.cluster_centers_,
-            "model": self.model,
-            "objective": self.model.ObjVal,
-            "best_cluster_sizes": best_sizes,
-            "cluster_size_objectives": self.cluster_size_objectives,
-            "processed_cluster_sizes": self.processed_cluster_sizes,
-        }
+        return self
 
     def print_model(self, results_folder: Path, result_name: str) -> None:
         assert (

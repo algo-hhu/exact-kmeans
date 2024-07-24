@@ -65,8 +65,7 @@ if __name__ == "__main__":
     logger.info(f"The data has the following shape: {X.shape}")
 
     ilp = ExactKMeans(
-        X=X,
-        k=args.k,
+        n_clusters=args.k,
         config_file=args.config_file,
         load_existing_run_path=args.load_existing_run_path,
         cache_current_run_path=args.cache_current_run_path,
@@ -74,24 +73,23 @@ if __name__ == "__main__":
     )
 
     start = time()
-    res = ilp.fit()
+    ilp.fit(X)
     ilp_time = time() - start
 
     if args.results_path is not None:
         args.results_path.parent.mkdir(parents=True, exist_ok=True)
-        model = res["model"]
         res_eval = {
             "version": ilp.ilp_version,
             "time": ilp_time,
-            "initial_labels": res["initial_labels"],
-            "labels": res["labels"],
-            "objective": res["objective"],
-            "cluster_size_objectives": res["cluster_size_objectives"],
-            "best_cluster_sizes": res["best_cluster_sizes"],
-            "processed_cluster_sizes": res["processed_cluster_sizes"],
+            "initial_labels": ilp.initial_labels,
+            "labels": ilp.labels_,
+            "objective": ilp.inertia_,
+            "cluster_size_objectives": ilp.cluster_size_objectives,
+            "best_cluster_sizes": ilp.best_cluster_sizes,
+            "processed_cluster_sizes": ilp.processed_cluster_sizes,
             "changed_model_params": ilp.changed_model_params,
             "changed_bound_params": ilp.changed_bound_model_params,
-            "optimal": model.Status == 2,
+            "optimal": ilp.model.Status == 2 if ilp.model is not None else None,
             "git_hash": get_git_hash(),
         }
         for var_name, var in [
@@ -102,7 +100,7 @@ if __name__ == "__main__":
             ("lower_bound", "ObjBound"),
             ("solver_time", "Runtime"),
         ]:
-            res_eval[var_name] = getattr(model, var)
+            res_eval[var_name] = getattr(ilp.model, var)
 
         with open(args.results_path, "w") as f:
             json.dump(res_eval, f, indent=4, cls=JsonEncoder)
