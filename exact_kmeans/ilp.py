@@ -15,10 +15,10 @@ import numpy as np
 import pandas as pd
 import yaml
 from gurobipy import GRB
-from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 import exact_kmeans.dynamic_program.dp_plain as dp
+import exact_kmeans.init_bounds as init_bounds
 from exact_kmeans.util import (
     JsonEncoder,
     compute_centers,
@@ -53,6 +53,8 @@ class ExactKMeans:
         config_file: Union[str, Path] = Path(__file__).parent.resolve()
         / "config"
         / "default.yaml",
+        LB: Optional[List] = None,
+        UB: Optional[List] = None,
         cache_current_run_path: Optional[Path] = None,
         load_existing_run_path: Optional[Path] = None,
         kmeans_iterations: int = 100,
@@ -61,6 +63,8 @@ class ExactKMeans:
         self._v = 1
         self._k = self.k + self._v
         self.kmeans_iterations = kmeans_iterations
+        self.LB = LB
+        self.UB = UB
 
         self.changed_model_params = {}
         self.changed_bound_model_params = {}
@@ -929,20 +933,28 @@ class ExactKMeans:
         return initial_labels, sorted_sizes
 
     def compute_initial_cost_bound(self) -> Tuple[float, np.ndarray]:
-        best_inertia = np.inf
-        best_labels = None
 
-        for i in range(self.kmeans_iterations):
-            kmeans = KMeans(
-                n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+        if self.LB is None or self.UB is None:
+            logger.info("No bounds provided, compute vanilla kmeans++ solution.")
+            kmeans_init_v = init_bounds.KMeans_vanilla(
+                self.k,
+                self.kmeans_iterations,
             )
-            kmeans.fit(self.X)
-            if kmeans.inertia_ < best_inertia:
-                best_inertia = kmeans.inertia_
-                best_labels = kmeans.labels_
+            kmeans_init_v.fit(self.X)
+            best_inertia = kmeans_init_v.best_inertia
+            best_labels = kmeans_init_v.best_labels
 
-        if best_labels is None:
-            raise ValueError("KMeans could not find a solution.")
+        else:
+            logger.info(
+                f"Lower bounds {self.LB} and upper bpounds {self.UB} provided"
+                "compute vanilla kmeans++ solution."
+            )
+            kmeans_init_b = init_bounds.KMeans_bounded(
+                self.k, self.kmeans_iterations, self.LB, self.UB, "v1"
+            )
+            kmeans_init_b.fit(self.X)
+            best_inertia = kmeans_init_b.best_inertia
+            best_labels = kmeans_init_b.best_labels
 
         return best_inertia, best_labels
 

@@ -1,16 +1,58 @@
 import argparse
+import csv
 import json
 import logging
 import sys
 from pathlib import Path
 from time import time
+from typing import List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from exact_kmeans.ilp import ExactKMeans
 from exact_kmeans.util import JsonEncoder, get_git_hash
 
 logger = logging.getLogger(__name__)
+
+
+def read_bounds(
+    k: int, bounds_path: Optional[Path]
+) -> Tuple[Optional[List], Optional[List]]:
+
+    if bounds_path is not None:
+        LB = []
+        UB = []
+        with open(bounds_path, newline="") as bounds:
+            bounds_reader = csv.reader(bounds, delimiter=",")
+            for row in bounds_reader:
+                if row[0] == "LB":
+                    LB = [int(entry) for entry in row[1:]]
+                    if len(LB) < k:
+                        logger.info(
+                            f"Less that {k} lower bounds provided. Fill up with zeros."
+                        )
+                        LB.extend([0] * (k - len(LB)))
+                if row[0] == "UB":
+                    UB = [int(entry) for entry in row[1:]]
+                    if len(UB) < k:
+                        logger.info(
+                            f"Less that {k} upper bounds provided. Fill up with infinity."
+                        )
+                        UB.extend([np.inf] * (k - len(UB)))
+
+            logger.info(
+                f"Computed solution will satisfy lower bounds:\n"
+                f"{LB}\n"
+                f"and upper bounds:\n"
+                f"{UB}"
+            )
+    else:
+        logger.info("No lower and/or upper bounds provided.")
+        LB = None
+        UB = None
+
+    return (LB, UB)
 
 
 def set_up_logger(log_file: Path, mode: str = "w+") -> None:
@@ -42,6 +84,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config-file", type=Path, default="exact_kmeans/config/default.yaml"
     )
+    parser.add_argument("--bounds-path", type=Path, default=None)
     parser.add_argument("--kmeans-iterations", type=int, default=100)
     parser.add_argument("--results-path", type=Path, default=None)
     parser.add_argument("--load-existing-run-path", type=Path, default=None)
@@ -64,9 +107,13 @@ if __name__ == "__main__":
     X = data.values
     logger.info(f"The data has the following shape: {X.shape}")
 
+    LB, UB = read_bounds(args.k, args.bound_path)
+
     ilp = ExactKMeans(
         n_clusters=args.k,
         config_file=args.config_file,
+        LB=LB,
+        UB=UB,
         load_existing_run_path=args.load_existing_run_path,
         cache_current_run_path=args.cache_current_run_path,
         kmeans_iterations=args.kmeans_iterations,
