@@ -333,6 +333,11 @@ class KMeans_bounded:
 
         return (cost_bounded, kmeans_labels)
 
+    def fit_cluster_sizes(self, sizes: List) -> bool:
+        cluster_sizes = {i: sizes[i] for i in sizes}
+        _, success = self.check_bound_feasibility(cluster_sizes)
+        return success
+
     def fit(self, X: np.ndarray) -> "KMeans_bounded":
         self.X = X
         self.n = len(X)
