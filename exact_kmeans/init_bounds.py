@@ -9,6 +9,28 @@ from sklearn.cluster import KMeans
 logger = logging.getLogger(__name__)
 
 
+class KMeans_vanilla:
+    def __init__(self, n_clusters: int, kmeans_iterations: int = 100) -> None:
+        self.k = n_clusters
+        self.kmeans_iterations = kmeans_iterations
+
+    def fit(self, X: np.ndarray) -> "KMeans_vanilla":
+        self.X = X
+        self.n = len(X)
+        self.best_inertia = np.inf
+        self.best_labels = None
+
+        for i in range(self.kmeans_iterations):
+            kmeans = KMeans(
+                n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+            )
+            kmeans.fit(self.X)
+            if kmeans.inertia_ < self.best_inertia:
+                self.best_inertia = kmeans.inertia_
+                self.best_labels = kmeans.labels_
+        return self
+
+
 class KMeans_bounded:
     def __init__(
         self,
@@ -31,7 +53,7 @@ class KMeans_bounded:
             )
 
     def extract_index(self, name: str) -> int:
-        if name[0:2] == "v'":
+        if name[0:2] == "v'" or name[0:2] == "w'":
             return int(name[2:])
         return int(name[1:])
 
@@ -42,13 +64,14 @@ class KMeans_bounded:
 
     # min-cost-flow algorithm can cause errors for non-integer weights
     # therefore the distances between centers are rounded
-    def center_dist_rounded(self, cluster_centers: np.ndarray) -> np.ndarray:
-        distances = np.zeros((self.k, self.k))
+    def dist_rounded(self, S: np.ndarray, T: np.ndarray) -> np.ndarray:
+        s = S.shape[0]
+        t = T.shape[0]
+        distances = np.zeros((s, t))
 
-        for i in range(self.k):
-            for j in range(i + 1, self.k):
-                distances[i, j] = get_distance(cluster_centers[i], cluster_centers[j])
-                distances[j, i] = distances[i, j]
+        for i in range(s):
+            for j in range(t):
+                distances[i, j] = get_distance(S[i], T[j])
 
         min_dist = np.min(distances[np.nonzero(distances)])
         min_dist = min_dist if min_dist != 0 else 0.0001
@@ -91,16 +114,11 @@ class KMeans_bounded:
         cluster_bounds: Dict,
     ) -> None:
         G = nx.DiGraph()
-        distances = self.center_dist_rounded(cluster_centers)
+        distances = self.dist_rounded(cluster_centers, cluster_centers)
         for label_i in cluster_sizes:
             size = cluster_sizes[label_i]
             LB = cluster_bounds[label_i][0]
             UB = cluster_bounds[label_i][1]
-
-            # cluster_stats = bound_assign[i]
-            # violated = cluster_stats[0]
-            # LB = cluster_stats[1][0]
-            # UB = cluster_stats[1][1]
 
             if size < LB:
                 # add edges to sink
@@ -185,6 +203,57 @@ class KMeans_bounded:
                 clusters_by_labels[j].append(point)
                 cluster_labels[point] = j
 
+    def establish_bound_feasibility_v2(
+        self,
+        cluster_labels: np.ndarray,
+        cluster_centers: np.ndarray,
+        cluster_sizes: Dict,
+        cluster_bounds: Dict,
+    ) -> None:
+        G = nx.DiGraph()
+        distances = self.dist_rounded(cluster_centers, self.X)
+
+        for i in range(self.n):
+            G.add_edge("s", f"v{i}", capacity=1, weight=0)
+            for label in cluster_sizes:
+                dist = distances[i][label]
+                G.add_edge(f"v{i}", f"w{label}", capacity=1, weight=dist)
+                G.add_edge(f"v{i}", f"w'{label}", capacity=1, weight=dist)
+
+        for label in cluster_sizes:
+            LB = cluster_bounds[label][0]
+            UB = cluster_bounds[label][1]
+
+            G.add_edge(f"w{label}", "t_l", capacity=LB, weight=0)
+            G.add_edge(f"w'{label}", "t_uml", capacity=UB - LB, weight=0)
+
+        LB_sum = sum(self.LB)
+
+        G.add_edge("t_l", "t", capacity=LB_sum, weilght=0)
+        G.add_edge("t_uml", "t", capacity=self.n - LB_sum, weight=0)
+
+        # for e in G.edges:
+        #    print(f"Added edge {e} with parameters {G.get_edge_data(u=e[0], v=e[1])}")
+
+        min_cost_flow = nx.max_flow_min_cost(G, "s", "t")
+
+        # print(min_cost_flow)
+        # transform flow to reassignemnt of points
+
+        check = 0
+        for e in G.edges:
+            x = e[0]
+            y = e[1]
+            if x == "s" or y in ["t", "t_l", "t_uml"]:
+                continue
+            i = self.extract_index(x)
+            j = self.extract_index(y)
+            if min_cost_flow[x][y] == 1:
+                check += 1
+                cluster_labels[i] = j
+        if check != self.n:
+            raise ValueError("Computed invalid flow.")
+
     # check if solution satisfies lower and upper bounds by computing a min cost flow
     def check_bound_feasibility(self, cluster_sizes: Dict) -> Tuple[Dict, bool]:
         G = nx.DiGraph()
@@ -227,7 +296,7 @@ class KMeans_bounded:
                     else:
                         cluster_bounds[label] = [self.LB[j], self.UB[j]]
             if check is False:
-                raise ValueError("Computed invalid flow ...")
+                raise ValueError("Computed invalid flow.")
         if flow_value == 0:
             return cluster_bounds, True
 
@@ -253,6 +322,11 @@ class KMeans_bounded:
                 kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
             )
 
+        if self.version == "v2":
+            self.establish_bound_feasibility_v2(
+                kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
+            )
+
         self.sanity_check(kmeans_labels)
 
         cost_bounded = self.kmeans_cost(kmeans_labels)
@@ -266,16 +340,13 @@ class KMeans_bounded:
         self.best_labels = None
 
         # if no bounds provided run vanilla kmeans++
-        # TODO adapt
         if self.LB == [0] * self.k and self.UB == [np.inf] * self.k:
-            for i in range(self.kmeans_iterations):
-                kmeans = KMeans(
-                    n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
-                )
-                kmeans.fit(self.X)
-                if kmeans.inertia_ < self.best_inertia:
-                    self.best_inertia = kmeans.inertia_
-                    self.best_labels = kmeans.labels_
+            kmeans_vanilla = KMeans_vanilla(
+                n_clusters=self.k, kmeans_iterations=self.kmeans_iterations
+            )
+            kmeans_vanilla.fit(self.X)
+            self.best_inertia = kmeans_vanilla.best_inertia
+            self.best_labels = kmeans_vanilla.best_labels
 
         # if bounds provided run vanilla kmeans++ and modify solution until bounds are satisfied
         else:
