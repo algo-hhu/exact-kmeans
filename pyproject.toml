@@ -27,7 +27,9 @@ scikit-learn = [
     {version = "^1.4.2", python = ">=3.12"}
 ]
 tqdm = "^4.66.4"
-
+networkx = [
+    {version = "^3.3", python = ">=3.10"}
+]
 [tool.poetry.group.dev.dependencies]
 black = "^24.4.2"
 pre-commit = "^2.14.0"
