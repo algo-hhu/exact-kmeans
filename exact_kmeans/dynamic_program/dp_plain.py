@@ -3,6 +3,8 @@ from typing import Dict
 
 import numpy as np
 
+# TODO: adapt to handle bounds
+
 
 def DP_init(n_points: int, k: int, lb: Dict[int, float]) -> np.ndarray:
     # make array one dimension larger to avoid substracting 1 every time
