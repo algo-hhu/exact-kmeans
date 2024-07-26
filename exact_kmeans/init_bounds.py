@@ -3,8 +3,9 @@ from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 import numpy as np
-from kmeans_ilp.util import get_distance, kmeans_cluster_sizes
 from sklearn.cluster import KMeans
+
+from exact_kmeans.util import get_distance
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class KMeans_bounded:
         return distances
 
     def sanity_check(self, cluster_labels: np.ndarray) -> None:
-        cluster_sizes = kmeans_cluster_sizes(cluster_labels)
+        cluster_sizes = self.kmeans_cluster_sizes(cluster_labels)
         _, success = self.check_bound_feasibility(cluster_sizes)
         if success is False:
             raise ValueError("Some lower or upper bounds are still violated...")
@@ -274,10 +275,10 @@ class KMeans_bounded:
         flow = nx.min_cost_flow(G)
         flow_value = nx.cost_of_flow(G, flow)
 
-        logger.info(
-            "In check_bound_feasibility: "
-            f"Found flow with flow value {flow_value}: {flow}"
-        )
+        # logger.info(
+        #    "In check_bound_feasibility: "
+        #    f"Found flow with flow value {flow_value}: {flow}"
+        # )
 
         # transform flow into cluster bounds assignment
         cluster_bounds = {label: Tuple[int, int] for label in cluster_sizes}
@@ -306,10 +307,12 @@ class KMeans_bounded:
         self, kmeans_labels: np.ndarray, kmeans_centers: np.ndarray
     ) -> Tuple[float, np.ndarray]:
         # compute assignemnt of cluster sizes to bounds via a min cost flow
-        cluster_sizes = kmeans_cluster_sizes(kmeans_labels)
+        cluster_sizes = self.kmeans_cluster_sizes(kmeans_labels)
 
         if len(cluster_sizes) < self.k:
             logger.info("KMeans++ solution with less than k clusters, skipping...")
+            cost_bounded = self.kmeans_cost(kmeans_labels)
+            return (cost_bounded, kmeans_labels)
 
         cluster_bounds, feasible = self.check_bound_feasibility(cluster_sizes)
         if feasible:
@@ -333,6 +336,7 @@ class KMeans_bounded:
 
         return (cost_bounded, kmeans_labels)
 
+    # checks if cluster sizes satisfy bound constraints
     def fit_cluster_sizes(self, sizes: List) -> bool:
         cluster_sizes = {i: sizes[i] for i in sizes}
         _, success = self.check_bound_feasibility(cluster_sizes)
@@ -360,7 +364,7 @@ class KMeans_bounded:
                     n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
                 )
                 kmeans.fit(self.X)
-                # if the solution is already worse or we have less than k clusters we stop here
+
                 if kmeans.inertia_ >= self.best_inertia:
                     continue
 

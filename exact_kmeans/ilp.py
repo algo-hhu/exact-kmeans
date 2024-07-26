@@ -997,8 +997,7 @@ class ExactKMeans:
 
         if self.constraints.get("bounds", False):
             logger.info(
-                f"Lower bounds {self.LB} and upper bpounds {self.UB} provided"
-                "compute vanilla kmeans++ solution."
+                f"Lower bounds {self.LB} and upper bpounds {self.UB} provided. "
             )
             kmeans_init_b = init_bounds.KMeans_bounded(
                 self.k, self.kmeans_iterations, self.LB, self.UB, "v1"
