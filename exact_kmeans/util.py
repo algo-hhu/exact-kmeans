@@ -100,11 +100,6 @@ def get_distance(x: np.ndarray, y: np.ndarray) -> Any:
     return sum((x - y) ** 2)
 
 
-def kmeans_cluster_sizes(kmeans_labels: np.ndarray) -> Tuple[List[int], List[int]]:
-    labels, cluster_sizes = np.unique(kmeans_labels, return_counts=True)
-    return labels, cluster_sizes
-
-
 def kmeans_cost(cluster_labels: np.ndarray, points: np.ndarray, k: int) -> float:
     dim = points.shape[1]
     centroids = np.zeros(shape=(k, dim))
