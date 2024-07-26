@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def read_bounds(
-    k: int, bounds_path: Optional[Path]
+    k: int, n: int, bounds_path: Optional[Path]
 ) -> Tuple[Optional[List], Optional[List]]:
 
     if bounds_path is not None:
@@ -47,6 +47,18 @@ def read_bounds(
                 f"and upper bounds:\n"
                 f"{UB}"
             )
+        # check if bounds can be satisfied
+        for i in range(k):
+            if LB[i] > UB[i]:
+                raise ValueError(
+                    f"For {i}th pair of bounds:"
+                    "lower bound has to be less or equal upper bound."
+                )
+        if sum(LB) > n:
+            raise ValueError("Sum of lower bounds is larger than number of points.")
+        if sum(UB) < n:
+            raise ValueError("Sum of upper bounds is smaller than number of points.")
+
     else:
         logger.info("No lower and/or upper bounds provided.")
         LB = None
@@ -107,7 +119,7 @@ if __name__ == "__main__":
     X = data.values
     logger.info(f"The data has the following shape: {X.shape}")
 
-    LB, UB = read_bounds(args.k, args.bound_path)
+    LB, UB = read_bounds(args.k, X.shape[0], args.bound_path)
 
     ilp = ExactKMeans(
         n_clusters=args.k,
