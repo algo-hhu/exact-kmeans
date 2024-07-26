@@ -119,7 +119,7 @@ if __name__ == "__main__":
     X = data.values
     logger.info(f"The data has the following shape: {X.shape}")
 
-    LB, UB = read_bounds(args.k, X.shape[0], args.bound_path)
+    LB, UB = read_bounds(args.k, X.shape[0], args.bounds_path)
 
     ilp = ExactKMeans(
         n_clusters=args.k,
