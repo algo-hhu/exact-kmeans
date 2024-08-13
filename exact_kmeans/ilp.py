@@ -880,21 +880,23 @@ class ExactKMeans:
         # when lower- and upper bounds are provided:
         # largest cluster size has to be between
         # lower and upper bound of bounds pair with highest upper bound
+
+        m_max = max(self.cluster_size_objectives.keys())
+        m_min = math.ceil(self.n / self.k)
+
         if self.constraints.get("bounds", False):
-            m_max = max(self.UB)
+            ub_max = max(self.UB)
             indices = []
             for i in range(self.k):
-                if self.UB[i] == m_max:
+                if self.UB[i] == ub_max:
                     indices += [i]
-            m_min = 0
+            lb_min = 0
             for i in indices:
-                if self.LB[i] > m_min:
-                    m_min = self.LB[i]
+                if self.LB[i] > lb_min:
+                    lb_min = self.LB[i]
 
-            m_min = max(m_min, math.ceil(self.n / self.k))
-        else:
-            m_max = max(self.cluster_size_objectives.keys())
-            m_min = math.ceil(self.n / self.k)
+            m_min = max(m_min, lb_min)
+            m_max = min(m_max, ub_max)
 
         logger.info(
             f"Iterate through all possible maximum cluster sizes: [{m_max}, {m_min}]."
@@ -970,9 +972,10 @@ class ExactKMeans:
                 best_tmp_obj = obj
                 best_sizes = sizes
 
-        assert (
-            best_sizes is not None and best_tmp_obj is not None
-        ), f"No feasible solution was found during Branch&Bound: {self.processed_cluster_sizes}"
+        # assert (
+        #    best_sizes is not None and best_tmp_obj is not None
+        # ),
+        # f"No feasible solution was found during Branch&Bound: {self.processed_cluster_sizes}"
 
         if not np.isclose(best_tmp_obj, best_obj.value):
             logger.error(

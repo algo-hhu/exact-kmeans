@@ -42,10 +42,8 @@ def read_bounds(
                         UB.extend([np.inf] * (k - len(UB)))
 
             logger.info(
-                f"Computed solution will satisfy lower bounds:\n"
-                f"{LB}\n"
-                f"and upper bounds:\n"
-                f"{UB}"
+                f"Computed solution will satisfy lower bounds: {LB} "
+                f"and upper bounds: {UB}"
             )
         # check if bounds can be satisfied
         for i in range(k):

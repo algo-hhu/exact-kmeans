@@ -60,7 +60,7 @@ class KMeans_bounded:
 
     def kmeans_cluster_sizes(self, kmeans_labels: np.ndarray) -> Dict:
         labels, sizes = np.unique(kmeans_labels, return_counts=True)
-        cluster_sizes = {labels[i]: sizes[i] for i in range(len(labels))}
+        cluster_sizes = {int(labels[i]): int(sizes[i]) for i in range(len(labels))}
         return cluster_sizes
 
     # min-cost-flow algorithm can cause errors for non-integer weights
@@ -86,12 +86,24 @@ class KMeans_bounded:
         if success is False:
             raise ValueError("Some lower or upper bounds are still violated...")
 
-    def kmeans_cost(self, cluster_labels: np.ndarray) -> float:
+    def compute_assignment(self, cluster_centers: np.ndarray) -> np.array:
+        labels = np.zeros(self.n)
+
+        for i in range(self.n):
+            min = np.inf
+            for j in range(len(cluster_centers)):
+                dist = get_distance(cluster_centers[j], self.X[i])
+                if dist < min:
+                    min = dist
+                    labels[i] = j
+
+        return labels
+
+    def compute_centroids(self, cluster_labels: np.ndarray) -> np.ndarray:
         dim = self.X.shape[1]
         centroids = np.zeros(shape=(self.k, dim))
         sizes = np.zeros(self.k)
 
-        # computation of centroids
         for i in range(self.n):
             label = cluster_labels[i]
             centroids[label] += self.X[i]
@@ -100,7 +112,12 @@ class KMeans_bounded:
         for i in range(self.k):
             centroids[i] /= sizes[i]
 
+        return centroids
+
+    def kmeans_cost(self, cluster_labels: np.ndarray) -> float:
+        centroids = self.compute_centroids(cluster_labels)
         cost = 0
+
         for i in range(self.n):
             label = cluster_labels[i]
             cost += get_distance(centroids[label], self.X[i])
@@ -116,6 +133,7 @@ class KMeans_bounded:
     ) -> None:
         G = nx.DiGraph()
         distances = self.dist_rounded(cluster_centers, cluster_centers)
+
         for label_i in cluster_sizes:
             size = cluster_sizes[label_i]
             LB = cluster_bounds[label_i][0]
@@ -126,6 +144,7 @@ class KMeans_bounded:
                 G.add_edge(f"v{label_i}", "t", capacity=LB - size, weight=0)
                 G.add_edge(f"v'{label_i}", "t", capacity=UB - LB, weight=0)
             elif size > UB:
+                print(cluster_sizes)
                 for label_j in cluster_sizes:
                     dist_ij = distances[label_i][label_j]
                     size_j = cluster_sizes[label_j]
@@ -271,6 +290,12 @@ class KMeans_bounded:
                 violation = max(0, self.LB[j] - size, size - self.UB[j])
                 G.add_edge(f"v{label}", f"w{j}", capacity=1, weight=violation)
 
+        if len(cluster_sizes) != self.k:
+            diff = self.k - len(cluster_sizes)
+            G.add_node("z", demand=-diff)
+            for j in range(self.k):
+                G.add_edge("z", f"w{j}", capacity=1, weight=0)
+
         # Compute the min cost flow
         flow = nx.min_cost_flow(G)
         flow_value = nx.cost_of_flow(G, flow)
@@ -307,31 +332,33 @@ class KMeans_bounded:
         self, kmeans_labels: np.ndarray, kmeans_centers: np.ndarray
     ) -> Tuple[float, np.ndarray]:
         # compute assignemnt of cluster sizes to bounds via a min cost flow
-        cluster_sizes = self.kmeans_cluster_sizes(kmeans_labels)
+        for _ in range(10):
+            kmeans_centers = self.compute_centroids(kmeans_labels)
+            kmeans_labels = self.compute_assignment(kmeans_centers)
+            cluster_sizes = self.kmeans_cluster_sizes(kmeans_labels)
 
-        if len(cluster_sizes) < self.k:
-            logger.info("KMeans++ solution with less than k clusters, skipping...")
-            cost_bounded = self.kmeans_cost(kmeans_labels)
-            return (cost_bounded, kmeans_labels)
+            if len(cluster_sizes) < self.k:
+                logger.info("KMeans solution with less than k clusters, skipping...")
+                cost_bounded = self.kmeans_cost(kmeans_labels)
+                return (cost_bounded, kmeans_labels)
 
-        cluster_bounds, feasible = self.check_bound_feasibility(cluster_sizes)
-        if feasible:
-            cost_bounded = self.kmeans_cost(kmeans_labels)
-            return (cost_bounded, kmeans_labels)
+            cluster_bounds, feasible = self.check_bound_feasibility(cluster_sizes)
+            if feasible:
+                cost_bounded = self.kmeans_cost(kmeans_labels)
+                return (cost_bounded, kmeans_labels)
 
-        # if bounds could not be satisfied, establish bounds via min cost flow
-        if self.version == "v1":
-            self.establish_bound_feasibility_v1(
-                kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
-            )
+            # if bounds could not be satisfied, establish bounds via min cost flow
+            if self.version == "v1":
+                self.establish_bound_feasibility_v1(
+                    kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
+                )
 
-        if self.version == "v2":
-            self.establish_bound_feasibility_v2(
-                kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
-            )
+            if self.version == "v2":
+                self.establish_bound_feasibility_v2(
+                    kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
+                )
 
         self.sanity_check(kmeans_labels)
-
         cost_bounded = self.kmeans_cost(kmeans_labels)
 
         return (cost_bounded, kmeans_labels)
