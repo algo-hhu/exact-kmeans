@@ -39,7 +39,7 @@ class KMeans_bounded:
         kmeans_iterations: int = 100,
         LB: Optional[List] = None,
         UB: Optional[List] = None,
-        version: str = "v1",
+        version: str = "v2",
     ) -> None:
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
@@ -261,7 +261,7 @@ class KMeans_bounded:
         cluster_bounds: Dict,
     ) -> None:
         G = nx.DiGraph()
-        distances = self.dist_rounded(cluster_centers, self.X)
+        distances = self.dist_rounded(self.X, cluster_centers)
 
         for i in range(self.n):
             G.add_edge("s", f"v{i}", capacity=1, weight=0)
