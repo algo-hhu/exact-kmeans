@@ -1003,7 +1003,7 @@ class ExactKMeans:
                 f"Lower bounds {self.LB} and upper bpounds {self.UB} provided. "
             )
             kmeans_init_b = init_bounds.KMeans_bounded(
-                self.k, self.kmeans_iterations, self.LB, self.UB, "v1"
+                self.k, self.kmeans_iterations, self.LB, self.UB
             )
             kmeans_init_b.fit(self.X)
             best_inertia = kmeans_init_b.best_inertia

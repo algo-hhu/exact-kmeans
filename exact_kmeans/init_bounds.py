@@ -60,7 +60,7 @@ class KMeans_bounded:
 
     def kmeans_cluster_sizes(self, kmeans_labels: np.ndarray) -> Dict:
         labels, sizes = np.unique(kmeans_labels, return_counts=True)
-        cluster_sizes = {int(labels[i]): int(sizes[i]) for i in range(len(labels))}
+        cluster_sizes = {labels[i]: sizes[i] for i in range(len(labels))}
         return cluster_sizes
 
     # min-cost-flow algorithm can cause errors for non-integer weights
@@ -87,7 +87,7 @@ class KMeans_bounded:
             raise ValueError("Some lower or upper bounds are still violated...")
 
     def compute_assignment(self, cluster_centers: np.ndarray) -> np.array:
-        labels = np.zeros(self.n)
+        labels = np.zeros(shape=self.n, dtype=int)
 
         for i in range(self.n):
             min = np.inf
@@ -134,17 +134,32 @@ class KMeans_bounded:
         G = nx.DiGraph()
         distances = self.dist_rounded(cluster_centers, cluster_centers)
 
+        demand_pos = 0
+        demand_neg = 0
+
         for label_i in cluster_sizes:
             size = cluster_sizes[label_i]
             LB = cluster_bounds[label_i][0]
             UB = cluster_bounds[label_i][1]
 
             if size < LB:
+                # demand
+                G.add_node(f"v{label_i}", demand=LB - size)
+                demand_pos += LB - size
+                G.add_node(f"v'{label_i}", demand=0)
+
                 # add edges to sink
-                G.add_edge(f"v{label_i}", "t", capacity=LB - size, weight=0)
+                # G.add_edge(f"v{label_i}", "t", capacity=LB - size, weight=0)
                 G.add_edge(f"v'{label_i}", "t", capacity=UB - LB, weight=0)
+
+                # add edge to source
+                G.add_edge("s", f"v'{label_i}", capacity=UB - LB, weight=0)
             elif size > UB:
-                print(cluster_sizes)
+                # demand
+                G.add_node(f"v{label_i}", demand=UB - size)
+                demand_neg += size - UB
+                G.add_node(f"v'{label_i}", demand=0)
+
                 for label_j in cluster_sizes:
                     dist_ij = distances[label_i][label_j]
                     size_j = cluster_sizes[label_j]
@@ -178,13 +193,22 @@ class KMeans_bounded:
                             weight=dist_ij,
                         )
                 # add edges to source
-                G.add_edge("s", f"v{label_i}", capacity=size - UB, weight=0)
+                # G.add_edge("s", f"v{label_i}", capacity=size - UB, weight=0)
                 G.add_edge("s", f"v'{label_i}", capacity=UB - LB, weight=0)
+                G.add_edge(f"v'{label_i}", "t", capacity=UB - LB, weight=0)
 
             else:
+                # demand
+                G.add_node(f"v{label_i}", demand=0)
+                G.add_node(f"v'{label_i}", demand=0)
+
                 # add edges to source and sink
                 G.add_edge(f"v{label_i}", "t", capacity=UB - size, weight=0)
+                G.add_edge("s", f"v{label_i}", capacity=UB - size, weight=0)
+
                 G.add_edge("s", f"v'{label_i}", capacity=size - LB, weight=0)
+                G.add_edge(f"v'{label_i}", "t", capacity=size - LB, weight=0)
+
                 for label_j in cluster_sizes:
                     size_j = cluster_sizes[label_j]
                     LB_j = cluster_bounds[label_j][0]
@@ -198,13 +222,19 @@ class KMeans_bounded:
                             weight=dist_ij,
                         )
 
-        # for e in G.edges:
-        #    print(f"Added edge {e} with parameters {G.get_edge_data(u=e[0], v=e[1])}")
+        if demand_neg <= demand_pos:
+            G.add_node("s", demand=demand_neg - demand_pos)
+            G.add_node("t", demand=0)
+        else:
+            G.add_node("t", demand=demand_neg - demand_pos)
+            G.add_node("s", demand=0)
 
-        min_cost_flow = nx.max_flow_min_cost(G, "s", "t")
+        dem = nx.get_node_attributes(G, "demand", default=None)
+        total = 0
+        for key in dem:
+            total += dem[key]
 
-        # print(min_cost_flow)
-        # transform flow to reassignemnt of points
+        min_cost_flow = nx.min_cost_flow(G)
 
         clusters_by_labels: Dict[int, list] = {i: [] for i in range(self.k)}
         for j in range(self.n):
@@ -300,11 +330,6 @@ class KMeans_bounded:
         flow = nx.min_cost_flow(G)
         flow_value = nx.cost_of_flow(G, flow)
 
-        # logger.info(
-        #    "In check_bound_feasibility: "
-        #    f"Found flow with flow value {flow_value}: {flow}"
-        # )
-
         # transform flow into cluster bounds assignment
         cluster_bounds = {label: Tuple[int, int] for label in cluster_sizes}
         for label in cluster_sizes:
@@ -312,8 +337,6 @@ class KMeans_bounded:
             size = cluster_sizes[label]
             for j in range(self.k):
                 if flow[f"v{label}"][f"w{j}"] == 1:
-                    # print(f"cluster {i} of size {size} is"
-                    #       f"assigend LB {LB[j]} and UB {UB[j]}\n")
                     check = True
                     if size < self.LB[j]:
                         cluster_bounds[label] = [self.LB[j], self.UB[j]]
