@@ -81,7 +81,7 @@ class ExactKMeans:
                     self.tolerance_value, self.changed_model_params[param]
                 )
 
-        self.constraints: Dict[str, Any]
+        self.constraints: Dict[str, Any] = {}
         if LB is not None and UB is not None:
             logger.info("Setting lower and upper bounds.")
             self.LB = LB
