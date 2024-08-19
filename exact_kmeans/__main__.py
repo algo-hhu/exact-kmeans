@@ -58,7 +58,6 @@ def read_bounds(
             raise ValueError("Sum of upper bounds is smaller than number of points.")
 
     else:
-        logger.info("No lower and/or upper bounds provided.")
         LB = None
         UB = None
 
@@ -99,6 +98,8 @@ if __name__ == "__main__":
     parser.add_argument("--results-path", type=Path, default=None)
     parser.add_argument("--load-existing-run-path", type=Path, default=None)
     parser.add_argument("--cache-current-run-path", type=Path, default=None)
+    parser.add_argument("--bounds-version", type=str, default=None)
+    parser.add_argument("--outlier", type=int, default=None)
 
     parser.add_argument("--verbose", action="store_true")
 
@@ -124,9 +125,11 @@ if __name__ == "__main__":
         config_file=args.config_file,
         LB=LB,
         UB=UB,
+        # outlier=args.outlier,
         load_existing_run_path=args.load_existing_run_path,
         cache_current_run_path=args.cache_current_run_path,
         kmeans_iterations=args.kmeans_iterations,
+        # bounds_version=args.bounds_version,
     )
 
     start = time()
@@ -140,7 +143,7 @@ if __name__ == "__main__":
             "time": ilp_time,
             "initial_labels": ilp.initial_labels,
             "labels": ilp.labels_,
-            "objective": ilp.inertia_,
+            "optimal_objective": ilp.inertia_,
             "cluster_size_objectives": ilp.cluster_size_objectives,
             "best_cluster_sizes": ilp.best_cluster_sizes,
             "processed_cluster_sizes": ilp.processed_cluster_sizes,

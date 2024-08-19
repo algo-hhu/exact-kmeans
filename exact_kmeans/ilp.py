@@ -58,6 +58,7 @@ class ExactKMeans:
         cache_current_run_path: Optional[Path] = None,
         load_existing_run_path: Optional[Path] = None,
         kmeans_iterations: int = 100,
+        # bounds_version: Optional[int] = None,
     ) -> None:
         self.k = n_clusters
         self._v = 1
@@ -80,15 +81,29 @@ class ExactKMeans:
                     self.tolerance_value, self.changed_model_params[param]
                 )
 
-        self.constraints = {}
+        self.constraints: Dict[str, Any]
         if LB is not None and UB is not None:
+            logger.info("Setting lower and upper bounds.")
             self.LB = LB
             self.UB = UB
             self.constraints.update({"bounds": True})
+            # if bounds_version is not None:
+            #    if bounds_version == 1 or bounds_version == 2:
+            #        self.constraints.update({"bounds_version": bounds_version})
+            #    else:
+            #        logger.info(
+            #            "Picked invalid version to compute initial bounded solution,"
+            #            "version must be 1 or 2. Picked default version 1."
+            #        )
+            #        self.constraints.update({"bounds_version": 1})
         else:
             self.LB = []
             self.UB = []
-
+        """
+        if outlier is not None:
+            logger.info(f"Set number of outliers to {outlier}.")
+            self.constraints.update({"outlier": outlier})
+        """
         logger.info(self.config)
         version = self.config.get("ilp_version", None)
         self.ilp_version = version
@@ -368,10 +383,6 @@ class ExactKMeans:
         # Add the largest tolerance to the kmeans cost
         bounded_cost = kmeanspp_cost + self.tolerance_value
 
-        # # Add an x such that Cost <= C + x
-        # if self.config.get("bound_cost_dmax", False):
-        #     bounded_cost += self.dmax
-
         constr = model.addConstr(
             gp.quicksum(
                 (y[i, j, ll] * self.distance_by_index(i, j))
@@ -454,9 +465,6 @@ class ExactKMeans:
 
         self.both_points_in_cluster_linear(model, x, y, different_k=k)
         self.upper_bound_both_points_in_cluster(model, x, y, different_k=k)
-
-        # if self.config.get("branch_priorities", False):
-        # self.set_var_branch_priority(x, different_k=k)
 
         model.setObjective(
             gp.quicksum(
@@ -648,10 +656,15 @@ class ExactKMeans:
     def enumerate_sizes(
         self,
         task_queue: queue.Queue,
-        output_queue: queue.Queue,
+        output_list: Any,
         tightest_upper_bound: multiprocessing.managers.ValueProxy,
         lock: Any,  # multiprocessing.managers.AcquirerProxy,
     ) -> None:
+        if self.constraints.get("bounds", False):
+            bounded = init_bounds.KMeans_bounded(
+                n_clusters=self.k, LB=self.LB, UB=self.UB
+            )
+
         while True:
             try:
                 current_cluster_sizes = task_queue.get(
@@ -660,20 +673,21 @@ class ExactKMeans:
             except queue.Empty:
                 break
 
-            for obj, t, sizes in self.processed_cluster_sizes:
+            for _, _, sizes in self.processed_cluster_sizes:
                 if sizes == current_cluster_sizes:
                     logger.info(
                         f"Cluster sizes {current_cluster_sizes} have "
                         "already been previously processed, skipping..."
                     )
-                    output_queue.put((obj, t, sizes))
                     return
+
             logger.info(f"Current cluster sizes: {current_cluster_sizes}.")
             n_fixed_points = sum(current_cluster_sizes)
             k_fixed = len(current_cluster_sizes)
 
             # Lower bound on the cost of a clustering with cluster_sizes as constraint,
             # We use the results from the DP to find a better lower bound
+
             assert self.dp_bounds is not None, "DP bounds have not been computed."
             sum_bound = (
                 sum(self.cluster_size_objectives[m] for m in current_cluster_sizes)
@@ -687,9 +701,6 @@ class ExactKMeans:
             found_bound: Union[str, float]
 
             if self.constraints.get("bounds", False):
-                bounded = init_bounds.KMeans_bounded(
-                    n_clusters=self.k, LB=self.LB, UB=self.UB
-                )
                 _, proceed = bounded.check_bound_feasibility(
                     {i: test_sizes[i] for i in range(len(test_sizes))}
                 )
@@ -708,8 +719,10 @@ class ExactKMeans:
                         f"Upper bound {sum_bound} is greater than the "
                         f"current upper bound {tightest_upper_bound.value}, skipping..."
                     )
+
                 # If we have the same number of cluster sizes as the number of clusters
-                elif len(current_cluster_sizes) == self.k:
+                # elif len(current_cluster_sizes) == self.k:
+                if len(current_cluster_sizes) == self.k:
                     found_bound, ILP_time = self.get_fixed_cluster_sizes_ilp_result(
                         current_cluster_sizes, tightest_upper_bound.value
                     )
@@ -751,7 +764,6 @@ class ExactKMeans:
                             f"Current cluster sizes: "
                             f"{current_cluster_sizes} replaced by {test_sizes}"
                         )
-
                         sum_bound = sum(
                             self.cluster_size_objectives[m] for m in test_sizes
                         )
@@ -793,6 +805,7 @@ class ExactKMeans:
                         #             f"{tightest_upper_bound.value}, skipping..."
                         #         )
                         #         found_bound = "ilp_sum_bound_greater"
+
                     if found_bound not in {"infeasible", "ilp_sum_bound_greater"}:
                         found_bound = "branch"
                         # If the program is feasible and we have less than k clusters
@@ -810,7 +823,8 @@ class ExactKMeans:
                             )
                             task_queue.put(current_cluster_sizes + [m])
 
-            output_queue.put((found_bound, ILP_time, current_cluster_sizes))
+            with lock:
+                output_list.append((found_bound, ILP_time, current_cluster_sizes))
 
     def compute_cluster_size_objectives(self) -> None:
         # If the cluster sizes have not already been computed
@@ -820,13 +834,10 @@ class ExactKMeans:
 
         # in case we have upper and lower bounds:
         # cluster sizes must lie between the smallest lower bound and highest upper bound
+        start_bound = max(self.cluster_size_objectives.keys()) + 1
         if self.constraints.get("bounds", False):
-            start_bound = max(
-                max(self.cluster_size_objectives.keys()) + 1, min(self.LB)
-            )
             end_bound = min(self.n + 1, max(self.UB) + 1)
         else:
-            start_bound = max(self.cluster_size_objectives.keys()) + 1
             end_bound = self.n + 1
 
         greater_string = (
@@ -907,16 +918,12 @@ class ExactKMeans:
         manager = multiprocessing.Manager()
         # Create shared variables for the return values
         best_obj = manager.Value("d", self.kmeanspp_cluster_cost)
-
+        # create a list to store the processed cluster sizes
+        output_list = manager.list()
         # Create a lock for synchronizing access to the shared value
         lock = manager.Lock()
 
-        # Get the largest cluster size that is less than the kmeans cost
-        # for m in range(m_max, m_min - 1, -1):
-        #     obj = self.enumerate_sizes([m], upper_bound=best_obj)
-        #     best_obj = min(best_obj, obj)
         task_queue: multiprocessing.Queue = multiprocessing.Queue()
-        output_queue: multiprocessing.Queue = multiprocessing.Queue()
 
         # First put the biggest size of kmeans++ in the queue
         m_max_kmeanspp = kmeanspp_sizes[0]
@@ -938,7 +945,7 @@ class ExactKMeans:
             for _ in range(self.num_processes):
                 p = multiprocessing.Process(
                     target=self.enumerate_sizes,
-                    args=(task_queue, output_queue, best_obj, lock),
+                    args=(task_queue, output_list, best_obj, lock),
                 )
                 p.start()
                 processes.append(p)
@@ -946,13 +953,13 @@ class ExactKMeans:
             # Wait for all worker processes to finish
             for p in processes:
                 p.join()
+
         except KeyboardInterrupt:
             logger.info("Received KeyboardInterrupt, stopping each process.")
             for p in processes:
                 p.terminate()
 
-            while not output_queue.empty():
-                self.processed_cluster_sizes.append(output_queue.get())
+            self.processed_cluster_sizes = list(output_list)
 
             raise KeyboardInterrupt
 
@@ -961,9 +968,8 @@ class ExactKMeans:
             f"a final objective of {best_obj.value}."
         )
 
-        while not output_queue.empty():
-            self.processed_cluster_sizes.append(output_queue.get())
-
+        self.processed_cluster_sizes = list(output_list)
+        logger.info(f"number of processed sizes: {len(self.processed_cluster_sizes)}")
         best_tmp_obj: Optional[float] = None
         best_sizes: Optional[np.ndarray] = None
 
@@ -972,10 +978,9 @@ class ExactKMeans:
                 best_tmp_obj = obj
                 best_sizes = sizes
 
-        # assert (
-        #    best_sizes is not None and best_tmp_obj is not None
-        # ),
-        # f"No feasible solution was found during Branch&Bound: {self.processed_cluster_sizes}"
+        assert (
+            best_sizes is not None and best_tmp_obj is not None
+        ), f"No feasible solution was found during Branch&Bound: {self.processed_cluster_sizes}"
 
         if not np.isclose(best_tmp_obj, best_obj.value):
             logger.error(
@@ -999,11 +1004,13 @@ class ExactKMeans:
     def compute_initial_cost_bound(self) -> Tuple[float, np.ndarray]:
 
         if self.constraints.get("bounds", False):
-            logger.info(
-                f"Lower bounds {self.LB} and upper bpounds {self.UB} provided. "
-            )
+            logger.info(f"Lower bounds {self.LB} and upper bounds {self.UB} provided. ")
             kmeans_init_b = init_bounds.KMeans_bounded(
-                self.k, self.kmeans_iterations, self.LB, self.UB
+                self.k,
+                self.kmeans_iterations,
+                self.LB,
+                self.UB,
+                # self.constraints.get("bounds_version"),
             )
             kmeans_init_b.fit(self.X)
             best_inertia = kmeans_init_b.best_inertia

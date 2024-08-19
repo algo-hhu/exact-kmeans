@@ -35,6 +35,8 @@ def plot(
             color = "cyan"
         elif isinstance(obj, float):
             color = "green"
+        elif obj == "constr_infeasible":
+            color = "purple"
         else:
             raise ValueError(f"Unknown object {obj}")
 

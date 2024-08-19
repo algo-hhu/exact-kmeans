@@ -32,6 +32,59 @@ class KMeans_vanilla:
         return self
 
 
+"""
+class KMeans_outlier:
+    def __init__(self, n_clusters: int, kmeans_iterations: int = 100, outlier: int = 0) -> None:
+        self.k = n_clusters
+        self.kmeans_iterations = kmeans_iterations
+        self.outlier = outlier
+
+    def compute_distances(
+            self,
+            kmeans_labels: np.ndarray,
+            kmeans_centers: np.ndarray
+        ) -> Dict:
+
+        dist = {i: np.inf for i in range(self.n)}
+        for i in range(self.n):
+            label=kmeans_labels[i]
+            dist[i]=get_distance(kmeans_centers[label], self.X[i])
+
+        return dist
+
+    def remove_outlier(
+            self,
+            kmeans_labels: np.ndarray,
+            kmeans_centers: np.ndarray
+        ) -> Tuple[float, np.ndarray]:
+
+        for i in range(10):
+            dist=self.compute_distances(kmeans_labels, kmeans_centers)
+            sorted(Dict)
+            for
+
+
+    def fit(self, X: np.ndarray) -> "KMeans_vanilla":
+        self.X = X
+        self.n = len(X)
+        self.best_inertia = np.inf
+        self.best_labels = None
+
+        for i in range(self.kmeans_iterations):
+            kmeans = KMeans(
+                n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+            )
+            kmeans.fit(self.X)
+            if kmeans.inertia_ >= self.best_inertia:
+                continue
+
+            cost_outlier, labels_outlier = self.remove_outlier(
+                kmeans.labels_, kmeans.cluster_centers_
+            )
+
+"""
+
+
 class KMeans_bounded:
     def __init__(
         self,
@@ -39,7 +92,7 @@ class KMeans_bounded:
         kmeans_iterations: int = 100,
         LB: Optional[List] = None,
         UB: Optional[List] = None,
-        version: str = "v2",
+        version: int = 2,
     ) -> None:
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
@@ -371,12 +424,12 @@ class KMeans_bounded:
                 return (cost_bounded, kmeans_labels)
 
             # if bounds could not be satisfied, establish bounds via min cost flow
-            if self.version == "v1":
+            if self.version == 1:
                 self.establish_bound_feasibility_v1(
                     kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
                 )
 
-            if self.version == "v2":
+            if self.version == 2:
                 self.establish_bound_feasibility_v2(
                     kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
                 )
