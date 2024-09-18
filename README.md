@@ -25,7 +25,7 @@ ILP#2 gets cluster sizes $c_1,\ldots, c_i$ with $2\leq i\leq k$ as input. If $c_
 
 To search for the cluster sizes of an optimal solution we use a branch and bound approach. In a branch node of level $i$ the $i$ largest cluster sizes $c_1, \ldots, c_i$ are already fixed. The variables `branching_levels` and `fill_cluster_sizes` define the behavior on these branching nodes. If `branching_levels` is greater equal to the level $i$ of the node then we use ILP#2 to bound the current cost and decide if we branch, otherwise we always branch on this node. If the variable `fill_cluster_sizes` is set to true we compute the smallest possible remaining cluster sizes $c_{i+1},\ldots, c_{k}$ and run ILP#2 with cluster sizes $c_1,\ldots, c_k$. If the variable `fill_cluster_sizes` is set to false we run ILP#2 only with the fixed cluster sizes $c_1,\ldots, c_i$. Setting `fill_cluster_sizes` to true may lead to less branching but can increase the solving time of ILP#2.
 
-# Config file
+## Config file
 To customize the runs, you can create a config file. The default config file is [`exact_kmeans/config/default.yaml`](exact_kmeans/config/default.yaml). You can also pass a different config file as an argument.
 - `num_processes` (integer or float) sets the number of processes used. The algorithm was parallelized using the `multiprocessing` package, so you can set the number of processes that you want to use. If you use an integer, at most that number of processes will be taken, otherwise if you use a float, it will be a fraction of the available CPUs. If the parameter is not passed, the algorithm will use all available CPUs.
 - `bound_model_params` are the arguments that are passed to the ILP#1 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
@@ -38,9 +38,9 @@ To customize the runs, you can create a config file. The default config file is 
 ## Constraints
 
 This package can handle lower bounds, upper bounds and outliers.
-- `lower/upper bounds:` for given lower bounds $l_1,..., l_k$ and upper bounds $u_1,..., u_k$  the task is to compute the best clustering with cluster sizes $c_1, ..., c_k$ such that $l_i\leq c_i\leq u_i$ for $i=1,..., k$.
-- `outlier:` for a given number of outliers $out$ the task is to compute the best clustering where it is allowed to remove up to $out$ many points from the dataset.
-- `lower/upper bounds and outlier:` the task is to compute the best clustering with cluster sizes $c_1, ..., c_k$ such that $l_i\leq c_i\leq u_i$ for $i=1,..., k$ while it is also allowed to remove up to $out$ many points from the dataset.
+- **lower/upper bounds:** for given lower bounds $l_1,..., l_k$ and upper bounds $u_1,..., u_k$  the task is to compute the best clustering with cluster sizes $c_1, ..., c_k$ such that $l_i\leq c_i\leq u_i$ for $i=1,..., k$.
+- **outlier:** for a given number of outliers $out$ the task is to compute the best clustering where it is allowed to remove up to $out$ many points from the dataset.
+- **lower/upper bounds and outlier:** the task is to compute the best clustering with cluster sizes $c_1, ..., c_k$ such that $l_i\leq c_i\leq u_i$ for $i=1,..., k$ while it is also allowed to remove up to $out$ many points from the dataset.
 
 
 ## Installation
@@ -54,11 +54,12 @@ pip install exact-kmeans
 
 ## Use within Python
 ```python
-class exact_kmeans.ilp.ExactKMeans(n_clusters, config_file: Path(__file__).parent.resolve()/ "config"/ "default.yaml", kmeans_iterations = 100, LB = None, UB = None, outlier = 0)
+class exact_kmeans.ilp.ExactKMeans(n_clusters, config_file: Path(__file__).parent.resolve()/ "config"/ "default.yaml",
+  kmeans_iterations = 100, LB = None, UB = None, outlier = 0)
 ```
 ### Parameters:
 - `n_clusters: int` Number of clusters k of the k-means solution
-- `config-file: Union[str, Path], dafault=Path(__file__).parent.resolve()/ "config"/ "default.yaml"` config file for branch and bound and ILP cofigurations, see [Here](#config-file)
+- `config-file: Union[str, Path], dafault=Path(__file__).parent.resolve()/ "config"/ "default.yaml"` config file for branch and bound and ILP cofigurations, see [here](#config-file)
 - `kmeans_iterations: int, default=100` In the unconstrained version this is the number of runs of the k-means++ algortihm, in the constrained version this is the number of runs of the k-means++ algorithm plus a postprocessing step which gurantees that the constrains are satisfied. The solution with smallest cost among all iterations is returned and used as initialization for the branch and bound approach. Better solutions can decrease the computation time of branch and bound.
 - `LB: Optional[List], default=None` List of lower bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(LB)` is smaller equal the size of the data set, otherwise there is no feasible solution.
 - `UB: Optional[List], default=None` List of upper bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(UB)+outlier` is greater equal the size of the data set, otherwise there is no feasible solution.
