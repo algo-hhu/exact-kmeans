@@ -53,16 +53,16 @@ pip install exact-kmeans
 ```
 
 ## Use within Python
-```
+```python
 class exact_kmeans.ilp.ExactKMeans(n_clusters, config_file: Path(__file__).parent.resolve()/ "config"/ "default.yaml", kmeans_iterations = 100, LB = None, UB = None, outlier = 0)
 ```
 ### Parameters:
--`n_clusters: int` Number of clusters k of the k-means solution
--`config-file: Union[str, Path], dafault=Path(__file__).parent.resolve()/ "config"/ "default.yaml"` config file for branch and bound and ILP cofigurations, see [Here](#config-file)
--`kmeans_iterations: int, default=100` In the unconstrained version this is the number of runs of the k-means++ algortihm, in the constrained version this is the number of runs of the k-means++ algorithm plus a postprocessing step which gurantees that the constrains are satisfied. The solution with smallest cost among all iterations is returned and used as initialization for the branch and bound approach. Better solutions can decrease the computation time of branch and bound.
--`LB: Optional[List], default=None` List of lower bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(LB)` is smaller equal the size of the data set, otherwise there is no feasible solution.
--`UB: Optional[List], default=None` List of upper bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(UB)+outlier` is greater equal the size of the data set, otherwise there is no feasible solution.
--`outlier: int, default=0` Number of outliers, it must be non-negative. If provided please gurantee that it is smaller equal the size of the data set. Points labeled as outliers in the computed solution have label `n_clusters`.
+- `n_clusters: int` Number of clusters k of the k-means solution
+- `config-file: Union[str, Path], dafault=Path(__file__).parent.resolve()/ "config"/ "default.yaml"` config file for branch and bound and ILP cofigurations, see [Here](#config-file)
+- `kmeans_iterations: int, default=100` In the unconstrained version this is the number of runs of the k-means++ algortihm, in the constrained version this is the number of runs of the k-means++ algorithm plus a postprocessing step which gurantees that the constrains are satisfied. The solution with smallest cost among all iterations is returned and used as initialization for the branch and bound approach. Better solutions can decrease the computation time of branch and bound.
+- `LB: Optional[List], default=None` List of lower bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(LB)` is smaller equal the size of the data set, otherwise there is no feasible solution.
+- `UB: Optional[List], default=None` List of upper bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(UB)+outlier` is greater equal the size of the data set, otherwise there is no feasible solution.
+- `outlier: int, default=0` Number of outliers, it must be non-negative. If provided please gurantee that it is smaller equal the size of the data set. Points labeled as outliers in the computed solution have label `n_clusters`.
 
 ## Example:
 
