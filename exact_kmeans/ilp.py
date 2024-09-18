@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import math
@@ -53,12 +54,10 @@ class ExactKMeans:
         config_file: Union[str, Path] = Path(__file__).parent.resolve()
         / "config"
         / "default.yaml",
-        LB: Optional[List] = None,
-        UB: Optional[List] = None,
-        cache_current_run_path: Optional[Path] = None,
-        load_existing_run_path: Optional[Path] = None,
         kmeans_iterations: int = 100,
-        # bounds_version: Optional[int] = None,
+        LB: Optional[list] = None,
+        UB: Optional[list] = None,
+        outlier: int = 0,
     ) -> None:
         self.k = n_clusters
         self._v = 1
@@ -81,29 +80,35 @@ class ExactKMeans:
                     self.tolerance_value, self.changed_model_params[param]
                 )
 
-        self.constraints: Dict[str, Any] = {}
-        if LB is not None and UB is not None:
-            logger.info("Setting lower and upper bounds.")
-            self.LB = LB
-            self.UB = UB
-            self.constraints.update({"bounds": True})
-            # if bounds_version is not None:
-            #    if bounds_version == 1 or bounds_version == 2:
-            #        self.constraints.update({"bounds_version": bounds_version})
-            #    else:
-            #        logger.info(
-            #            "Picked invalid version to compute initial bounded solution,"
-            #            "version must be 1 or 2. Picked default version 1."
-            #        )
-            #        self.constraints.update({"bounds_version": 1})
-        else:
-            self.LB = []
-            self.UB = []
-        """
-        if outlier is not None:
-            logger.info(f"Set number of outliers to {outlier}.")
-            self.constraints.update({"outlier": outlier})
-        """
+        self.constraints = {"bounds": False, "outlier": False}
+        self.UB = []
+        self.LB = []
+        if LB is not None or UB is not None:
+            self.constraints["bounds"] = True
+
+            self.LB = LB if LB is not None else [0] * self.k
+            self.UB = UB if UB is not None else [np.inf] * self.k
+
+            if len(self.LB) < self.k or len(self.UB) < self.k:
+                raise ValueError(
+                    f"Length of LB {len(self.LB)} and/or"
+                    f"length of UB {len(self.UB)} is not equal n_clusters {self.k}."
+                )
+            for i in range(self.k):
+                if self.LB[i] > self.UB[i]:
+                    raise ValueError(
+                        f"In position {i}: lower bound is larger than upper bound."
+                    )
+
+            logger.info(f"Lower bounds set to {self.LB}, upper bounds set to {self.UB}")
+
+        self.outlier = outlier if outlier is not None else 0
+        if self.outlier < 0:
+            raise ValueError(f"Number of outliers {self.outlier} is negative.")
+        if self.outlier > 0:
+            self.constraints["outlier"] = True
+            logger.info(f"Number of outliers is set to {self.outlier}")
+
         logger.info(self.config)
         version = self.config.get("ilp_version", None)
         self.ilp_version = version
@@ -132,11 +137,20 @@ class ExactKMeans:
             self.ilp_version += "-branching-ilp"
 
         if self.config.get("fill_cluster_sizes", False):
-            logger.info(
-                "When computing ILP on brnaching cluster sizes "
-                f"fill up cluster sizes to {self.k}."
-            )
-            self.ilp_version += "-fill-sizes"
+            if self.constraints.get("bounds", False) or self.constraints.get(
+                "outlier", False
+            ):
+                logger.info(
+                    "Filling of cluster sizes is not suported for k-means with constraints,"
+                    "fill_cluster_sizes will be set to False."
+                )
+                self.config["fill_cluster_sizes"] = False
+            else:
+                logger.info(
+                    "When computing ILP on brnaching cluster sizes "
+                    f"fill up cluster sizes to {self.k}."
+                )
+                self.ilp_version += "-fill-sizes"
 
         self.num_processes = self.config.get("num_processes", 1)
         if isinstance(self.num_processes, int):
@@ -151,10 +165,11 @@ class ExactKMeans:
             f"multiprocessing out of {multiprocessing.cpu_count()} total processes."
         )
 
-        self.cache_current_run_path = cache_current_run_path
-
         self.dp_bounds: Optional[np.ndarray] = None
 
+        self.model: Optional[gp.Model] = None
+
+    def load_run(self, load_existing_run_path: Optional[Path] = None) -> None:
         if load_existing_run_path is not None and load_existing_run_path.exists():
             logger.info(f"Loading existing run from {load_existing_run_path}.")
 
@@ -187,8 +202,6 @@ class ExactKMeans:
             self.cluster_size_objectives = {0: 0, 1: 0}
             self.kmeanspp_cluster_cost = np.inf
             self.processed_cluster_sizes = []
-
-        self.model: Optional[gp.Model] = None
 
     def distance_by_index(self, i: int, j: int) -> Any:
         return get_distance(self.X[i - self._v], self.X[j - self._v])
@@ -423,13 +436,18 @@ class ExactKMeans:
         ), "Please run the optimization first to define a model."
 
         labels = np.zeros(len(self.X), dtype=int)
+        self.constraints.get("outlier", False)
         for i in range(self._v, self._n):
+            out = True
             for ll in range(self._v, self._k):
                 var_by_name = self.model.getVarByName(f"x[{i},{ll}]")
                 if var_by_name is None:
                     raise ValueError(f"Variable x[{i},{ll}] not found.")
                 if var_by_name.x > 0:  # type: ignore
+                    out = False
                     labels[i - self._v] = ll - self._v
+            if self.constraints.get("outlier", False) and out is True:
+                labels[i - self._v] = self.k
         return labels
 
     def set_var_branch_priority(
@@ -615,14 +633,18 @@ class ExactKMeans:
         return objective_value, ILP_time
 
     def fix_rem_cluster_sizes(self, cluster_sizes: List) -> List:
-        new_cluster_sizes = cluster_sizes
+        new_cluster_sizes = copy.deepcopy(cluster_sizes)
 
         if len(new_cluster_sizes) == self.k:
             return new_cluster_sizes
 
         n_fixed_points = sum(new_cluster_sizes)
-        search_start = math.ceil(
-            (self.n - n_fixed_points) / (self.k - len(new_cluster_sizes))
+        search_start = max(
+            1,
+            math.ceil(
+                (self.n - n_fixed_points - self.outlier)
+                / (self.k - len(new_cluster_sizes))
+            ),
         )
         if len(new_cluster_sizes) > 0:
             search_end = min(
@@ -633,25 +655,41 @@ class ExactKMeans:
         else:
             search_end = self.n - n_fixed_points - self.k + len(new_cluster_sizes) + 1
 
-        new_cluster_sizes = new_cluster_sizes + [search_start]
+        new_cluster_sizes.append(search_start)
         n_remaining_points = self.n - n_fixed_points - search_end
 
         while len(new_cluster_sizes) < self.k:
-            search_start = math.ceil(
-                n_remaining_points / (self.k - len(new_cluster_sizes))
+            search_start = max(
+                1,
+                math.ceil(
+                    (n_remaining_points - self.outlier)
+                    / (self.k - len(new_cluster_sizes))
+                ),
             )
             search_end_new = min(
                 search_end, n_remaining_points - self.k + len(new_cluster_sizes) + 1
             )
             search_end = search_end_new
             n_remaining_points -= search_end
-            new_cluster_sizes = new_cluster_sizes + [search_start]
+            new_cluster_sizes.append(search_start)
 
         assert (
             sum(new_cluster_sizes) <= self.n
         ), "fix_rem_cluster_sizes: sum new_cluster_sizes exceeds number of points"
 
         return new_cluster_sizes
+
+    def check_if_processed(
+        self, current_cluster_sizes: np.ndarray
+    ) -> Tuple[Optional[str], bool]:
+        for obj, _, sizes in self.processed_cluster_sizes:
+            if sizes == current_cluster_sizes:
+                logger.info(
+                    f"Cluster sizes {current_cluster_sizes} have "
+                    "already been previously processed, skipping..."
+                )
+                return (obj, True)
+        return (None, False)
 
     def enumerate_sizes(
         self,
@@ -673,13 +711,32 @@ class ExactKMeans:
             except queue.Empty:
                 break
 
-            for _, _, sizes in self.processed_cluster_sizes:
-                if sizes == current_cluster_sizes:
-                    logger.info(
-                        f"Cluster sizes {current_cluster_sizes} have "
-                        "already been previously processed, skipping..."
+            already_processed = False
+            obj, already_processed = self.check_if_processed(current_cluster_sizes)
+            if already_processed:
+                if obj == "branch":
+                    remaining_points = self.n - sum(current_cluster_sizes)
+                    search_start = max(
+                        1,
+                        math.ceil(
+                            (remaining_points - self.outlier)
+                            / (self.k - len(current_cluster_sizes))
+                        ),
                     )
-                    return
+                    search_end = min(
+                        current_cluster_sizes[-1],
+                        remaining_points - self.k + len(current_cluster_sizes) + 1,
+                    )
+                    logger.info(
+                        "Find next position in cluster sizes:"
+                        f"[{search_start}, {search_end}]."
+                    )
+                    for m in range(search_start, search_end + 1):
+                        logger.info(
+                            f"Enumerating cluster sizes: {current_cluster_sizes + [m]}"
+                        )
+                        task_queue.put(current_cluster_sizes + [m])
+                continue
 
             logger.info(f"Current cluster sizes: {current_cluster_sizes}.")
             n_fixed_points = sum(current_cluster_sizes)
@@ -689,15 +746,14 @@ class ExactKMeans:
             # We use the results from the DP to find a better lower bound
 
             assert self.dp_bounds is not None, "DP bounds have not been computed."
+            points_left = max(self.k - k_fixed, self.n - n_fixed_points - self.outlier)
             sum_bound = (
                 sum(self.cluster_size_objectives[m] for m in current_cluster_sizes)
-                + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
+                + self.dp_bounds[points_left][self.k - k_fixed]
             )
 
             test_sizes = current_cluster_sizes
             ILP_time = 0.0
-            proceed = True
-
             found_bound: Union[str, float]
 
             if self.constraints.get("bounds", False):
@@ -708,120 +764,126 @@ class ExactKMeans:
                     found_bound = "constr_infeasible"
                     logger.info(
                         "Cluster sizes are infeasible for desired "
-                        "lower- and upper bounds, skipping..."
+                        "constraints, skipping..."
                     )
+                    with lock:
+                        output_list.append(
+                            (found_bound, ILP_time, current_cluster_sizes)
+                        )
+                    continue
 
-            if proceed is True:
-                # If the sum of our current bounds is greater than the upper bound, we can skip
-                if sum_bound > tightest_upper_bound.value:
-                    found_bound = "sum_bound_greater"
+            # If the sum of our current bounds is greater than the upper bound, we can skip
+            if sum_bound > tightest_upper_bound.value:
+                found_bound = "sum_bound_greater"
+                logger.info(
+                    f"Upper bound {sum_bound} is greater than the "
+                    f"current upper bound {tightest_upper_bound.value}, skipping..."
+                )
+
+            # If we have the same number of cluster sizes as the number of clusters
+            if len(current_cluster_sizes) == self.k:
+                add_out = True if self.constraints.get("outlier") else False
+                found_bound, ILP_time = self.get_fixed_cluster_sizes_ilp_result(
+                    current_cluster_sizes,
+                    tightest_upper_bound.value,
+                    add_remaining_points=add_out,
+                )
+                if (
+                    isinstance(found_bound, float)
+                    and found_bound < tightest_upper_bound.value
+                ):
                     logger.info(
-                        f"Upper bound {sum_bound} is greater than the "
-                        f"current upper bound {tightest_upper_bound.value}, skipping..."
+                        "Found a better upper bound: "
+                        f"{found_bound} < {tightest_upper_bound.value}."
                     )
-
-                # If we have the same number of cluster sizes as the number of clusters
-                # elif len(current_cluster_sizes) == self.k:
-                if len(current_cluster_sizes) == self.k:
-                    found_bound, ILP_time = self.get_fixed_cluster_sizes_ilp_result(
-                        current_cluster_sizes, tightest_upper_bound.value
+                    with lock:
+                        tightest_upper_bound.value = found_bound
+            else:
+                found_bound = "branch"
+                remaining_points = self.n - sum(current_cluster_sizes)
+                search_start = max(
+                    1,
+                    math.ceil(
+                        (remaining_points - self.outlier)
+                        / (self.k - len(current_cluster_sizes))
+                    ),
+                )
+                search_end = min(
+                    current_cluster_sizes[-1],
+                    remaining_points - self.k + len(current_cluster_sizes) + 1,
+                )
+                # Run the ILP if we have more than one cluster size to
+                # see if we should branch from here
+                # It does not make sense to run it if we only have one value
+                # Because we have done it before with the other ILP
+                if (
+                    len(current_cluster_sizes) >= 2
+                    and len(current_cluster_sizes) <= self.ilp_branching_until_level
+                ):
+                    if self.config.get("fill_cluster_sizes", False):
+                        test_sizes = self.fix_rem_cluster_sizes(current_cluster_sizes)
+                    else:
+                        test_sizes = current_cluster_sizes + [search_start]
+                    logger.info(
+                        f"Current cluster sizes: "
+                        f"{current_cluster_sizes} replaced by {test_sizes}"
                     )
-                    if (
-                        isinstance(found_bound, float)
-                        and found_bound < tightest_upper_bound.value
-                    ):
+                    sum_bound = sum(self.cluster_size_objectives[m] for m in test_sizes)
+                    if sum_bound > tightest_upper_bound.value:
+                        found_bound = "sum_bound_greater"
                         logger.info(
-                            "Found a better upper bound: "
-                            f"{found_bound} < {tightest_upper_bound.value}."
+                            f"Lower bound {sum_bound} is greater than the "
+                            f"current upper bound {tightest_upper_bound.value}, skipping..."
                         )
-                        with lock:
-                            tightest_upper_bound.value = found_bound
-                else:
+                    else:
+                        (
+                            found_bound,
+                            ILP_time,
+                        ) = self.get_fixed_cluster_sizes_ilp_result(
+                            test_sizes,
+                            tightest_upper_bound.value,
+                            add_remaining_points=True,
+                        )
+
+                    # # TODO: This is still not working properly
+                    # if not self.config.get("fill_cluster_sizes", False) and isinstance(
+                    #     found_bound, float
+                    # ):
+                    #     n_fixed_points += search_end
+                    #     k_fixed += 1
+                    #     dp_bound = (
+                    #         found_bound
+                    #         + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
+                    #     )
+                    #     logger.info(
+                    #     f"Bound for {test_sizes} ({found_bound})"
+                    #       " with DP bound ({dp_bound})"
+                    #     )
+                    #     if dp_bound > tightest_upper_bound.value:
+                    #         logger.info(
+                    #             f"Bound for {test_sizes} ({found_bound}) "
+                    #             f"with DP bound ({dp_bound}) "
+                    #             "is greater than the current upper bound "
+                    #             f"{tightest_upper_bound.value}, skipping..."
+                    #         )
+                    #         found_bound = "ilp_sum_bound_greater"
+
+                if found_bound not in {"infeasible", "ilp_sum_bound_greater"}:
                     found_bound = "branch"
-                    remaining_points = self.n - n_fixed_points
-                    search_start = math.ceil(
-                        remaining_points / (self.k - len(current_cluster_sizes))
+                    # If the program is feasible and we have less than k clusters
+                    # we need to select the next cluster size,
+                    # and that shouldn't be larger than the largest size
+                    # and should also keep into account how many points still exist
+
+                    logger.info(
+                        "Find next position in cluster sizes:"
+                        f"[{search_start}, {search_end}]."
                     )
-                    search_end = min(
-                        current_cluster_sizes[-1],
-                        remaining_points - self.k + len(current_cluster_sizes) + 1,
-                    )
-                    # Run the ILP if we have more than one cluster size to
-                    # see if we should branch from here
-                    # It does not make sense to run it if we only have one value
-                    # Because we have done it before with the other ILP
-                    if (
-                        len(current_cluster_sizes) >= 2
-                        and len(current_cluster_sizes) <= self.ilp_branching_until_level
-                    ):
-                        if self.config.get("fill_cluster_sizes", False):
-                            test_sizes = self.fix_rem_cluster_sizes(
-                                current_cluster_sizes
-                            )
-                        else:
-                            test_sizes = current_cluster_sizes + [search_start]
+                    for m in range(search_start, search_end + 1):
                         logger.info(
-                            f"Current cluster sizes: "
-                            f"{current_cluster_sizes} replaced by {test_sizes}"
+                            f"Enumerating cluster sizes: {current_cluster_sizes + [m]}"
                         )
-                        sum_bound = sum(
-                            self.cluster_size_objectives[m] for m in test_sizes
-                        )
-                        if sum_bound > tightest_upper_bound.value:
-                            found_bound = "sum_bound_greater"
-                            logger.info(
-                                f"Lower bound {sum_bound} is greater than the "
-                                f"current upper bound {tightest_upper_bound.value}, skipping..."
-                            )
-                        else:
-                            (
-                                found_bound,
-                                ILP_time,
-                            ) = self.get_fixed_cluster_sizes_ilp_result(
-                                test_sizes,
-                                tightest_upper_bound.value,
-                                add_remaining_points=True,
-                            )
-
-                        # # TODO: This is still not working properly
-                        # if not self.config.get("fill_cluster_sizes", False) and isinstance(
-                        #     found_bound, float
-                        # ):
-                        #     n_fixed_points += search_end
-                        #     k_fixed += 1
-                        #     dp_bound = (
-                        #         found_bound
-                        #         + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
-                        #     )
-                        #     logger.info(
-                        #     f"Bound for {test_sizes} ({found_bound})"
-                        #       " with DP bound ({dp_bound})"
-                        #     )
-                        #     if dp_bound > tightest_upper_bound.value:
-                        #         logger.info(
-                        #             f"Bound for {test_sizes} ({found_bound}) "
-                        #             f"with DP bound ({dp_bound}) "
-                        #             "is greater than the current upper bound "
-                        #             f"{tightest_upper_bound.value}, skipping..."
-                        #         )
-                        #         found_bound = "ilp_sum_bound_greater"
-
-                    if found_bound not in {"infeasible", "ilp_sum_bound_greater"}:
-                        found_bound = "branch"
-                        # If the program is feasible and we have less than k clusters
-                        # we need to select the next cluster size,
-                        # and that shouldn't be larger than the largest size
-                        # and should also keep into account how many points still exist
-
-                        logger.info(
-                            "Find next position in cluster sizes:"
-                            f"[{search_start}, {search_end}]."
-                        )
-                        for m in range(search_start, search_end + 1):
-                            logger.info(
-                                f"Enumerating cluster sizes: {current_cluster_sizes + [m]}"
-                            )
-                            task_queue.put(current_cluster_sizes + [m])
+                        task_queue.put(current_cluster_sizes + [m])
 
             with lock:
                 output_list.append((found_bound, ILP_time, current_cluster_sizes))
@@ -833,7 +895,7 @@ class ExactKMeans:
         start = time()
 
         # in case we have upper and lower bounds:
-        # cluster sizes must lie between the smallest lower bound and highest upper bound
+        # cluster sizes must lie between 1 and the highest upper bound
         start_bound = max(self.cluster_size_objectives.keys()) + 1
         if self.constraints.get("bounds", False):
             end_bound = min(self.n + 1, max(self.UB) + 1)
@@ -891,9 +953,10 @@ class ExactKMeans:
         # when lower- and upper bounds are provided:
         # largest cluster size has to be between
         # lower and upper bound of bounds pair with highest upper bound
+        # outliers do not influence this
 
         m_max = max(self.cluster_size_objectives.keys())
-        m_min = math.ceil(self.n / self.k)
+        m_min = math.ceil((self.n - self.outlier) / self.k)
 
         if self.constraints.get("bounds", False):
             ub_max = max(self.UB)
@@ -990,14 +1053,23 @@ class ExactKMeans:
             )
         return np.array(best_sizes), best_obj.value
 
-    def sort_labels(self, kmeanspp_labels: np.ndarray) -> Tuple[List[int], List[int]]:
-        _, cluster_sizes = np.unique(kmeanspp_labels, return_counts=True)
+    def sort_labels(
+        self, kmeanspp_labels: np.ndarray, out_label: Optional[int] = None
+    ) -> Tuple[List[int], List[int]]:
+        cluster_labels, cluster_sizes = np.unique(kmeanspp_labels, return_counts=True)
+        if out_label is not None:
+            for i, label in enumerate(cluster_labels):
+                if label == out_label:
+                    cluster_labels = np.delete(cluster_labels, i)
+                    cluster_sizes = np.delete(cluster_sizes, i)
+                    break
+
         sorted_sizes = sorted(cluster_sizes, reverse=True)
         logger.info(f"KMeans++ cluster sizes: {sorted_sizes}")
 
         sorted_map = {v: i for i, v in enumerate(np.argsort(-cluster_sizes))}
 
-        initial_labels = [sorted_map[ll] for ll in kmeanspp_labels]
+        initial_labels = [sorted_map[ll] for ll in kmeanspp_labels if ll != out_label]
 
         return initial_labels, sorted_sizes
 
@@ -1005,26 +1077,41 @@ class ExactKMeans:
 
         if self.constraints.get("bounds", False):
             logger.info(f"Lower bounds {self.LB} and upper bounds {self.UB} provided. ")
-            kmeans_init_b = init_bounds.KMeans_bounded(
-                self.k,
-                self.kmeans_iterations,
-                self.LB,
-                self.UB,
-                # self.constraints.get("bounds_version"),
-            )
+            if self.constraints.get("outlier", False):
+                logger.info(f"Number of outliers is at most {self.outlier}.")
+                kmeans_init_b = init_bounds.KMeans_bounded(
+                    self.k, self.kmeans_iterations, self.LB, self.UB, self.outlier
+                )
+
+            else:
+                kmeans_init_b = init_bounds.KMeans_bounded(
+                    self.k,
+                    self.kmeans_iterations,
+                    self.LB,
+                    self.UB,
+                )
             kmeans_init_b.fit(self.X)
             best_inertia = kmeans_init_b.best_inertia
             best_labels = kmeans_init_b.best_labels
 
+        elif self.constraints.get("outlier", False):
+            logger.info(f"Number of outliers is at most {self.outlier}.")
+            kmeans_init_o = init_bounds.KMeans_outlier(
+                self.k, self.kmeans_iterations, self.outlier
+            )
+            kmeans_init_o.fit(self.X)
+            best_inertia = kmeans_init_o.best_inertia
+            best_labels = kmeans_init_o.best_labels
+
         else:
             logger.info("No bounds provided, compute vanilla kmeans++ solution.")
-            kmeans_init_v = init_bounds.KMeans_vanilla(
+            kmeans_init = init_bounds.KMeans_vanilla(
                 self.k,
                 self.kmeans_iterations,
             )
-            kmeans_init_v.fit(self.X)
-            best_inertia = kmeans_init_v.best_inertia
-            best_labels = kmeans_init_v.best_labels
+            kmeans_init.fit(self.X)
+            best_inertia = kmeans_init.best_inertia
+            best_labels = kmeans_init.best_labels
 
         return best_inertia, best_labels
 
@@ -1033,8 +1120,9 @@ class ExactKMeans:
         X: Union[np.ndarray, pd.DataFrame],
         y: Any = None,
         sample_weight: Optional[Sequence[float]] = None,
-        kmeanspp_cost: Optional[float] = None,
         kmeanspp_labels: Optional[np.ndarray] = None,
+        load_existing_run_path: Optional[Path] = None,
+        cache_current_run_path: Optional[Path] = None,
     ) -> "ExactKMeans":
 
         if isinstance(X, pd.DataFrame):
@@ -1046,13 +1134,31 @@ class ExactKMeans:
         self.n = len(X)
         self._n = self.n + self._v
 
-        if kmeanspp_cost is None and kmeanspp_labels is None:
-            kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
-        elif kmeanspp_labels is None and kmeanspp_cost is not None:
+        if self.constraints.get("bounds", False):
+            if sum(self.LB) > self.n:
+                raise ValueError(
+                    f"Sum of lower bounds {sum(self.LB)} exceeds number of points {self.n}."
+                )
+            if sum(self.UB) + self.outlier < self.n:
+                raise ValueError(
+                    f"Sum of upper bounds {sum(self.UB)}  and outliers {self.outlier}"
+                    f"is smaller than number of points {self.n}."
+                )
+        if self.constraints.get("outlier", False) and self.outlier >= self.n:
             raise ValueError(
-                "If kmeanspp_cost is provided, kmeanspp_labels must be provided as well."
+                f"Number of outliers {self.outlier}"
+                f"is greater equal number of points {self.n}."
             )
-        elif kmeanspp_labels is not None and kmeanspp_cost is None:
+
+        self.load_run(load_existing_run_path)
+        self.cache_current_run_path = cache_current_run_path
+
+        kmeanspp_cost = np.inf
+        if kmeanspp_labels is None:
+            kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
+        else:
+            # if the solution constains outliers,
+            # they have label k and are ignored in the cost computation
             kmeanspp_cost = kmeans_cost(kmeanspp_labels, points=self.X, k=self.k)
 
         assert (
@@ -1062,7 +1168,10 @@ class ExactKMeans:
         logger.info("Chosen initial KMeans++ solution with cost: %f", kmeanspp_cost)
 
         try:
-            self.initial_labels, kmeanspp_sizes = self.sort_labels(kmeanspp_labels)
+            # if the solution constains outliers, they have label k and will be removed
+            self.initial_labels, kmeanspp_sizes = self.sort_labels(
+                kmeanspp_labels, out_label=self.k
+            )
             self.kmeanspp_cluster_cost = kmeanspp_cost
 
             self.compute_cluster_size_objectives()
@@ -1106,6 +1215,7 @@ class ExactKMeans:
             cluster_sizes=best_sizes,
             cost=None,
             remove_tolerance=True,
+            add_remaining_points=self.constraints.get("outlier", False),
         )
 
         logger.info(f"Final ILP took {time() - start:.3f} seconds.")

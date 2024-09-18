@@ -101,31 +101,45 @@ def get_distance(x: np.ndarray, y: np.ndarray) -> Any:
 
 
 def kmeans_cost(cluster_labels: np.ndarray, points: np.ndarray, k: int) -> float:
-    dim = points.shape[1]
-    centroids = np.zeros(shape=(k, dim))
-    sizes = np.zeros(k)
-
-    # computation of centroids
-    for i in range(len(points)):
-        label = cluster_labels[i]
-        centroids[label] += points[i]
-        sizes[label] += 1
+    centroids = np.zeros(shape=(k, points.shape[1]))
 
     for i in range(k):
-        centroids[i] /= sizes[i]
+        id = np.where(cluster_labels == i)[0]
+        if np.any(id):
+            centroids[i] = points[id].mean(axis=0)
 
     cost = 0
     for i in range(len(points)):
         label = cluster_labels[i]
-        cost += get_distance(centroids[label], points[i])
+        if label < k:
+            cost += get_distance(centroids[label], points[i])
 
     return cost
 
 
-def compute_centers(points: np.ndarray, labels: np.ndarray) -> np.ndarray:
-    k = max(labels) + 1
+def compute_centers(
+    points: np.ndarray, labels: np.ndarray, rem_outlier: bool = False
+) -> np.ndarray:
+    if rem_outlier:
+        k = max(labels)
+    else:
+        k = max(labels) + 1
     centers = np.zeros((k, points.shape[1]))
     for i in range(k):
-        centers[i] = points[labels == i].mean(axis=0)
-
+        id = np.where(labels == i)[0]
+        if np.any(id):
+            centers[i] = points[id].mean(axis=0)
     return centers
+
+
+def compute_center_distances(
+    points: np.ndarray, labels: np.ndarray, centers: np.ndarray
+) -> List:
+
+    dist = []
+
+    for i, point in enumerate(points):
+        label = labels[i]
+        dist.append((i, get_distance(centers[label], point)))
+
+    return dist

@@ -5,7 +5,7 @@ import networkx as nx
 import numpy as np
 from sklearn.cluster import KMeans
 
-from exact_kmeans.util import get_distance
+from exact_kmeans.util import compute_center_distances, get_distance
 
 logger = logging.getLogger(__name__)
 
@@ -32,57 +32,104 @@ class KMeans_vanilla:
         return self
 
 
-"""
 class KMeans_outlier:
-    def __init__(self, n_clusters: int, kmeans_iterations: int = 100, outlier: int = 0) -> None:
+    def __init__(
+        self, n_clusters: int, kmeans_iterations: int = 100, outlier: int = 0
+    ) -> None:
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
         self.outlier = outlier
+        if self.outlier < 0:
+            raise ValueError("Number of outliers must be positive.")
+        if self.outlier == 0:
+            logger.info(
+                "Called initialization of KMeans with outliers with 0 outliers."
+                "Compute vanilla KMeans solution."
+            )
 
-    def compute_distances(
-            self,
-            kmeans_labels: np.ndarray,
-            kmeans_centers: np.ndarray
-        ) -> Dict:
+        self.out_label = n_clusters
 
-        dist = {i: np.inf for i in range(self.n)}
+    def compute_assignment(self, cluster_centers: np.ndarray) -> np.ndarray:
+        labels = np.zeros(shape=self.n, dtype=int)
+        new_k = len(cluster_centers)
+
         for i in range(self.n):
-            label=kmeans_labels[i]
-            dist[i]=get_distance(kmeans_centers[label], self.X[i])
+            min = np.inf
+            for j in range(new_k):
+                dist = get_distance(cluster_centers[j], self.X[i])
+                if dist < min:
+                    min = dist
+                    labels[i] = j
 
-        return dist
+        return labels
+
+    def compute_centroids(self, cluster_labels: np.ndarray) -> Tuple[np.ndarray, float]:
+        dim = self.X.shape[1]
+        centroids = np.zeros(shape=(self.k, dim))
+
+        for i in range(self.k):
+            id = np.where(cluster_labels == i)[0]
+            if np.any(id):
+                centroids[i] = self.X[id].mean(axis=0)
+
+        cost = 0
+        for i in range(self.n):
+            label = cluster_labels[i]
+            if label != self.out_label:
+                cost += get_distance(centroids[label], self.X[i])
+
+        return (centroids, cost)
 
     def remove_outlier(
-            self,
-            kmeans_labels: np.ndarray,
-            kmeans_centers: np.ndarray
-        ) -> Tuple[float, np.ndarray]:
+        self, kmeans_labels: np.ndarray, kmeans_centers: np.ndarray
+    ) -> Tuple[float, np.ndarray]:
 
-        for i in range(10):
-            dist=self.compute_distances(kmeans_labels, kmeans_centers)
-            sorted(Dict)
-            for
+        min_cost = np.inf
+        for i in range(3):
+            if i > 0:
+                kmeans_labels = self.compute_assignment(kmeans_centers)
+            dist = compute_center_distances(self.X, kmeans_labels, kmeans_centers)
+            dist.sort(key=lambda item: item[1], reverse=True)
+            # remove the points that are farthest away from the centers
+            for i in range(self.outlier):
+                pt = dist[i][0]
+                kmeans_labels[pt] = self.out_label
 
+            kmeans_centers, kmeans_cost = self.compute_centroids(kmeans_labels)
+            if kmeans_cost < min_cost:
+                min_cost = kmeans_cost
 
-    def fit(self, X: np.ndarray) -> "KMeans_vanilla":
+        return kmeans_cost, kmeans_labels
+
+    def fit(self, X: np.ndarray) -> "KMeans_outlier":
         self.X = X
         self.n = len(X)
         self.best_inertia = np.inf
         self.best_labels = None
+
+        if self.outlier > self.n:
+            raise ValueError(
+                f"Number of outliers {self.outlier} exceeds number of points {self.n}."
+            )
 
         for i in range(self.kmeans_iterations):
             kmeans = KMeans(
                 n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
             )
             kmeans.fit(self.X)
-            if kmeans.inertia_ >= self.best_inertia:
-                continue
+            if self.outlier > 0:
+                cost_outlier, labels_outlier = self.remove_outlier(
+                    kmeans_labels=kmeans.labels_, kmeans_centers=kmeans.cluster_centers_
+                )
+            else:
+                cost_outlier = kmeans.inertia_
+                labels_outlier = kmeans.labels_
 
-            cost_outlier, labels_outlier = self.remove_outlier(
-                kmeans.labels_, kmeans.cluster_centers_
-            )
+            if cost_outlier < self.best_inertia:
+                self.best_inertia = cost_outlier
+                self.best_labels = labels_outlier
 
-"""
+        return self
 
 
 class KMeans_bounded:
@@ -92,14 +139,17 @@ class KMeans_bounded:
         kmeans_iterations: int = 100,
         LB: Optional[List] = None,
         UB: Optional[List] = None,
-        version: int = 2,
+        outlier: int = 0,
     ) -> None:
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
-        self.version = version
 
         self.LB = [0] * self.k if LB is None else LB
         self.UB = [np.inf] * self.k if UB is None else UB
+        self.outlier = outlier
+        self.out_label = n_clusters
+        if self.outlier < 0:
+            raise ValueError("Number of outliers must be positive.")
 
         if len(self.LB) != self.k or len(self.UB) != self.k:
             raise ValueError(
@@ -107,6 +157,8 @@ class KMeans_bounded:
             )
 
     def extract_index(self, name: str) -> int:
+        if name == "out":
+            return self.out_label
         if name[0:2] == "v'" or name[0:2] == "w'":
             return int(name[2:])
         return int(name[1:])
@@ -139,31 +191,33 @@ class KMeans_bounded:
         if success is False:
             raise ValueError("Some lower or upper bounds are still violated...")
 
-    def compute_assignment(self, cluster_centers: np.ndarray) -> np.array:
+    def compute_assignment(
+        self, cluster_centers: np.ndarray
+    ) -> Tuple[np.array, np.ndarray]:
         labels = np.zeros(shape=self.n, dtype=int)
+        new_k = len(cluster_centers)
+        cluster_sizes = {j: 0 for j in range(new_k)}
 
         for i in range(self.n):
             min = np.inf
-            for j in range(len(cluster_centers)):
+            for j in range(new_k):
                 dist = get_distance(cluster_centers[j], self.X[i])
                 if dist < min:
                     min = dist
                     labels[i] = j
 
-        return labels
+        for i in range(self.n):
+            cluster_sizes[labels[i]] += 1
+
+        return (labels, cluster_sizes)
 
     def compute_centroids(self, cluster_labels: np.ndarray) -> np.ndarray:
         dim = self.X.shape[1]
         centroids = np.zeros(shape=(self.k, dim))
-        sizes = np.zeros(self.k)
-
-        for i in range(self.n):
-            label = cluster_labels[i]
-            centroids[label] += self.X[i]
-            sizes[label] += 1
-
         for i in range(self.k):
-            centroids[i] /= sizes[i]
+            id = np.where(cluster_labels == i)[0]
+            if np.any(id):
+                centroids[i] = self.X[id].mean(axis=0)
 
         return centroids
 
@@ -173,140 +227,11 @@ class KMeans_bounded:
 
         for i in range(self.n):
             label = cluster_labels[i]
-            cost += get_distance(centroids[label], self.X[i])
-
+            if label != self.out_label:
+                cost += get_distance(centroids[label], self.X[i])
         return cost
 
-    def establish_bound_feasibility_v1(
-        self,
-        cluster_labels: np.ndarray,
-        cluster_centers: np.ndarray,
-        cluster_sizes: Dict,
-        cluster_bounds: Dict,
-    ) -> None:
-        G = nx.DiGraph()
-        distances = self.dist_rounded(cluster_centers, cluster_centers)
-
-        demand_pos = 0
-        demand_neg = 0
-
-        for label_i in cluster_sizes:
-            size = cluster_sizes[label_i]
-            LB = cluster_bounds[label_i][0]
-            UB = cluster_bounds[label_i][1]
-
-            if size < LB:
-                # demand
-                G.add_node(f"v{label_i}", demand=LB - size)
-                demand_pos += LB - size
-                G.add_node(f"v'{label_i}", demand=0)
-
-                # add edges to sink
-                # G.add_edge(f"v{label_i}", "t", capacity=LB - size, weight=0)
-                G.add_edge(f"v'{label_i}", "t", capacity=UB - LB, weight=0)
-
-                # add edge to source
-                G.add_edge("s", f"v'{label_i}", capacity=UB - LB, weight=0)
-            elif size > UB:
-                # demand
-                G.add_node(f"v{label_i}", demand=UB - size)
-                demand_neg += size - UB
-                G.add_node(f"v'{label_i}", demand=0)
-
-                for label_j in cluster_sizes:
-                    dist_ij = distances[label_i][label_j]
-                    size_j = cluster_sizes[label_j]
-                    LB_j = cluster_bounds[label_j][0]
-                    UB_j = cluster_bounds[label_j][1]
-                    if size_j < LB_j:
-                        G.add_edge(
-                            f"v{label_i}",
-                            f"v{label_j}",
-                            capacity=np.inf,
-                            weight=dist_ij,
-                        )
-                        G.add_edge(
-                            f"v{label_i}",
-                            f"v'{label_j}",
-                            capacity=np.inf,
-                            weight=dist_ij,
-                        )
-                        G.add_edge(
-                            f"v'{label_i}",
-                            f"v{label_j}",
-                            capacity=np.inf,
-                            weight=dist_ij,
-                        )
-                    if LB_j <= size_j and size_j <= UB_j:
-                        # add edges to vertices with satisfied bounds
-                        G.add_edge(
-                            f"v{label_i}",
-                            f"v{label_j}",
-                            capacity=np.inf,
-                            weight=dist_ij,
-                        )
-                # add edges to source
-                # G.add_edge("s", f"v{label_i}", capacity=size - UB, weight=0)
-                G.add_edge("s", f"v'{label_i}", capacity=UB - LB, weight=0)
-                G.add_edge(f"v'{label_i}", "t", capacity=UB - LB, weight=0)
-
-            else:
-                # demand
-                G.add_node(f"v{label_i}", demand=0)
-                G.add_node(f"v'{label_i}", demand=0)
-
-                # add edges to source and sink
-                G.add_edge(f"v{label_i}", "t", capacity=UB - size, weight=0)
-                G.add_edge("s", f"v{label_i}", capacity=UB - size, weight=0)
-
-                G.add_edge("s", f"v'{label_i}", capacity=size - LB, weight=0)
-                G.add_edge(f"v'{label_i}", "t", capacity=size - LB, weight=0)
-
-                for label_j in cluster_sizes:
-                    size_j = cluster_sizes[label_j]
-                    LB_j = cluster_bounds[label_j][0]
-                    if size_j < LB_j:
-                        # add edges to vertices with violated lower bound
-                        dist_ij = distances[label_i][label_j]
-                        G.add_edge(
-                            f"v'{label_i}",
-                            f"v{label_j}",
-                            capacity=np.inf,
-                            weight=dist_ij,
-                        )
-
-        if demand_neg <= demand_pos:
-            G.add_node("s", demand=demand_neg - demand_pos)
-            G.add_node("t", demand=0)
-        else:
-            G.add_node("t", demand=demand_neg - demand_pos)
-            G.add_node("s", demand=0)
-
-        dem = nx.get_node_attributes(G, "demand", default=None)
-        total = 0
-        for key in dem:
-            total += dem[key]
-
-        min_cost_flow = nx.min_cost_flow(G)
-
-        clusters_by_labels: Dict[int, list] = {i: [] for i in range(self.k)}
-        for j in range(self.n):
-            label = cluster_labels[j]
-            clusters_by_labels[label] += [j]
-
-        for e in G.edges:
-            x = e[0]
-            y = e[1]
-            if x == "s" or y == "t":
-                continue
-            i = self.extract_index(x)
-            j = self.extract_index(y)
-            for _ in range(int(min_cost_flow[x][y])):
-                point = clusters_by_labels[i].pop()
-                clusters_by_labels[j].append(point)
-                cluster_labels[point] = j
-
-    def establish_bound_feasibility_v2(
+    def establish_bound_feasibility(
         self,
         cluster_labels: np.ndarray,
         cluster_centers: np.ndarray,
@@ -318,6 +243,7 @@ class KMeans_bounded:
 
         for i in range(self.n):
             G.add_edge("s", f"v{i}", capacity=1, weight=0)
+            G.add_edge(f"v{i}", "out", capacity=1, weight=0)
             for label in cluster_sizes:
                 dist = distances[i][label]
                 G.add_edge(f"v{i}", f"w{label}", capacity=1, weight=dist)
@@ -331,16 +257,13 @@ class KMeans_bounded:
             G.add_edge(f"w'{label}", "t_uml", capacity=UB - LB, weight=0)
 
         LB_sum = sum(self.LB)
-
+        max_outlier = min(self.outlier, self.n - LB_sum)
+        G.add_edge("out", "t", capacity=max_outlier, weight=0)
         G.add_edge("t_l", "t", capacity=LB_sum, weilght=0)
-        G.add_edge("t_uml", "t", capacity=self.n - LB_sum, weight=0)
-
-        # for e in G.edges:
-        #    print(f"Added edge {e} with parameters {G.get_edge_data(u=e[0], v=e[1])}")
+        G.add_edge("t_uml", "t", capacity=self.n - LB_sum - max_outlier, weight=0)
 
         min_cost_flow = nx.max_flow_min_cost(G, "s", "t")
 
-        # print(min_cost_flow)
         # transform flow to reassignemnt of points
 
         check = 0
@@ -349,11 +272,13 @@ class KMeans_bounded:
             y = e[1]
             if x == "s" or y in ["t", "t_l", "t_uml"]:
                 continue
+
             i = self.extract_index(x)
             j = self.extract_index(y)
             if min_cost_flow[x][y] == 1:
                 check += 1
                 cluster_labels[i] = j
+
         if check != self.n:
             raise ValueError("Computed invalid flow.")
 
@@ -381,10 +306,11 @@ class KMeans_bounded:
 
         # Compute the min cost flow
         flow = nx.min_cost_flow(G)
-        flow_value = nx.cost_of_flow(G, flow)
 
         # transform flow into cluster bounds assignment
         cluster_bounds = {label: Tuple[int, int] for label in cluster_sizes}
+        excess = 0
+        LB_violated = False
         for label in cluster_sizes:
             check = False
             size = cluster_sizes[label]
@@ -392,17 +318,54 @@ class KMeans_bounded:
                 if flow[f"v{label}"][f"w{j}"] == 1:
                     check = True
                     if size < self.LB[j]:
-                        cluster_bounds[label] = [self.LB[j], self.UB[j]]
-                    elif size > self.UB[j]:
-                        cluster_bounds[label] = [self.LB[j], self.UB[j]]
-                    else:
-                        cluster_bounds[label] = [self.LB[j], self.UB[j]]
+                        LB_violated = True
+                    size_excess = size - self.UB[j]
+                    if size_excess > 0:
+                        excess += size_excess
+                    cluster_bounds[label] = [self.LB[j], self.UB[j]]
             if check is False:
                 raise ValueError("Computed invalid flow.")
-        if flow_value == 0:
+        if LB_violated is False and excess <= self.outlier:
             return cluster_bounds, True
 
         return cluster_bounds, False
+
+    def remove_outlier(
+        self,
+        cluster_labels: np.ndarray,
+        cluster_centers: np.ndarray,
+        cluster_sizes: Dict,
+        cluster_bounds: Dict,
+    ) -> None:
+        dist = compute_center_distances(self.X, cluster_labels, cluster_centers)
+
+        dist.sort(key=lambda item: item[1], reverse=True)
+
+        removed = 0
+        # first remove points whose cluster violates the upper bound
+        for i in range(self.n):
+            if removed >= self.outlier:
+                break
+            point = dist[i][0]
+            label = cluster_labels[point]
+            if cluster_sizes[label] > cluster_bounds[label][1]:
+                cluster_labels[point] = self.out_label
+                cluster_sizes[label] -= 1
+                removed += 1
+
+        # now remove points if its cluster does not violate the lower bound after removal
+        for i in range(self.n):
+            if removed >= self.outlier:
+                break
+            point = dist[i][0]
+            label = cluster_labels[point]
+            if (
+                label != self.out_label
+                and cluster_sizes[label] > cluster_bounds[label][0]
+            ):
+                cluster_labels[point] = self.out_label
+                cluster_sizes[label] -= 1
+                removed += 1
 
     def establish_bounds(
         self, kmeans_labels: np.ndarray, kmeans_centers: np.ndarray
@@ -410,31 +373,32 @@ class KMeans_bounded:
         # compute assignemnt of cluster sizes to bounds via a min cost flow
         for _ in range(10):
             kmeans_centers = self.compute_centroids(kmeans_labels)
-            kmeans_labels = self.compute_assignment(kmeans_centers)
-            cluster_sizes = self.kmeans_cluster_sizes(kmeans_labels)
-
+            kmeans_labels, cluster_sizes = self.compute_assignment(kmeans_centers)
+            """
             if len(cluster_sizes) < self.k:
-                logger.info("KMeans solution with less than k clusters, skipping...")
-                cost_bounded = self.kmeans_cost(kmeans_labels)
-                return (cost_bounded, kmeans_labels)
-
+                if len(kmeans_centers) < self.k:
+                    logger.info("KMeans solution with less than k clusters, skipping...")
+                    cost_bounded = self.kmeans_cost(kmeans_labels)
+                    return (cost_bounded, kmeans_labels)
+                diff = self.k - len(cluster_sizes)
+                for _ in range(diff):
+                    cluster_sizes.append(0)
+            """
             cluster_bounds, feasible = self.check_bound_feasibility(cluster_sizes)
             if feasible:
+                if self.outlier > 0:
+                    self.remove_outlier(
+                        kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
+                    )
                 cost_bounded = self.kmeans_cost(kmeans_labels)
                 return (cost_bounded, kmeans_labels)
 
             # if bounds could not be satisfied, establish bounds via min cost flow
-            if self.version == 1:
-                self.establish_bound_feasibility_v1(
-                    kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
-                )
+            self.establish_bound_feasibility(
+                kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
+            )
 
-            if self.version == 2:
-                self.establish_bound_feasibility_v2(
-                    kmeans_labels, kmeans_centers, cluster_sizes, cluster_bounds
-                )
-
-        self.sanity_check(kmeans_labels)
+        # self.sanity_check(kmeans_labels)
         cost_bounded = self.kmeans_cost(kmeans_labels)
 
         return (cost_bounded, kmeans_labels)
@@ -452,13 +416,20 @@ class KMeans_bounded:
         self.best_labels = None
 
         # if no bounds provided run vanilla kmeans++
-        if self.LB == [0] * self.k and self.UB == [np.inf] * self.k:
-            kmeans_vanilla = KMeans_vanilla(
-                n_clusters=self.k, kmeans_iterations=self.kmeans_iterations
+        if self.outlier > self.n:
+            raise ValueError(
+                f"Number of outliers {self.outlier} exceeds number of points {self.n}."
             )
-            kmeans_vanilla.fit(self.X)
-            self.best_inertia = kmeans_vanilla.best_inertia
-            self.best_labels = kmeans_vanilla.best_labels
+
+        if self.LB == [0] * self.k and self.UB == [np.inf] * self.k:
+            kmeans_out = KMeans_outlier(
+                n_clusters=self.k,
+                kmeans_iterations=self.kmeans_iterations,
+                outlier=self.outlier,
+            )
+            kmeans_out.fit(self.X)
+            self.best_inertia = kmeans_out.best_inertia
+            self.best_labels = kmeans_out.best_labels
 
         # if bounds provided run vanilla kmeans++ and modify solution until bounds are satisfied
         else:
@@ -468,7 +439,7 @@ class KMeans_bounded:
                 )
                 kmeans.fit(self.X)
 
-                if kmeans.inertia_ >= self.best_inertia:
+                if self.outlier == 0 and kmeans.inertia_ >= self.best_inertia:
                     continue
 
                 cost_bounded, labels_bounded = self.establish_bounds(

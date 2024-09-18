@@ -5,7 +5,7 @@
 
 # exact-kmeans
 
-This package computes exact solutions to the $k$-means problem using integer linear programming (ILP).
+This package computes exact solutions to the $k$-means problem using integer linear programming (ILP). It can also compute exact solution for k-means with lower and upper bound constraints, outliers and the combination of both.
 Since our plain ILP solution to the problem was too slow, we implemented a branch-and-bound algorithm that computes multiple ILP solutions for different cluster sizes to find the optimal cluster sizes $[c_1, \ldots, c_k]$.
 The ILPs are implemented using [Gurobi](https://www.gurobi.com/). You will need a [Gurobi license](https://www.gurobi.com/downloads/) to be able to run the code.
 
@@ -25,14 +25,22 @@ ILP#2 gets cluster sizes $c_1,\ldots, c_i$ with $2\leq i\leq k$ as input. If $c_
 
 To search for the cluster sizes of an optimal solution we use a branch and bound approach. In a branch node of level $i$ the $i$ largest cluster sizes $c_1, \ldots, c_i$ are already fixed. The variables `branching_levels` and `fill_cluster_sizes` define the behavior on these branching nodes. If `branching_levels` is greater equal to the level $i$ of the node then we use ILP#2 to bound the current cost and decide if we branch, otherwise we always branch on this node. If the variable `fill_cluster_sizes` is set to true we compute the smallest possible remaining cluster sizes $c_{i+1},\ldots, c_{k}$ and run ILP#2 with cluster sizes $c_1,\ldots, c_k$. If the variable `fill_cluster_sizes` is set to false we run ILP#2 only with the fixed cluster sizes $c_1,\ldots, c_i$. Setting `fill_cluster_sizes` to true may lead to less branching but can increase the solving time of ILP#2.
 
+# Config file
 To customize the runs, you can create a config file. The default config file is [`exact_kmeans/config/default.yaml`](exact_kmeans/config/default.yaml). You can also pass a different config file as an argument.
 - `num_processes` (integer or float) sets the number of processes used. The algorithm was parallelized using the `multiprocessing` package, so you can set the number of processes that you want to use. If you use an integer, at most that number of processes will be taken, otherwise if you use a float, it will be a fraction of the available CPUs. If the parameter is not passed, the algorithm will use all available CPUs.
 - `bound_model_params` are the arguments that are passed to the ILP#1 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
 - `model_params` are the arguments that are passed to the ILP#2 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
-- `branching_priorities` (true/false) enables the use of branching priorities. If true, the priority of the $x$ variable will be higher than the other variables. According to our tests, this speeds up the solving.
+- `branching_priorities` (true/false) is passed to the ILP#2 model and enable/disable the use of branching priorities. If true, the priority of the $x$ variable will be higher than the other variables. According to our tests, this speeds up the solving.
 - `replace_min` (true/false) replaces a minimum constraint with a linear version. According to our tests, this speeds up the solving.
 - `branching_levels` (integer) Sets the maximum level of a branching node where we run ILP#2 to bound the cost. Since this can increase the number of ILPs that are computed, it may only make sense for small levels.
 - `fill_cluster_sizes` (true/false) If set to false we run ILP#2  only with cluster sizes fixed at the branching node. If set to true we fill the cluster sizes up to $k$. Setting the variable to true can result in a larger computation time for ILP#2 but may result in less branching, which can save time. For small $k$ we recommend setting it to false and for large $k$ we recommend setting it to true.
+
+## Constraints
+
+This package can handle lower bounds, upper bounds and outliers.
+- `lower/upper bounds:` for given lower bounds $l_1,..., l_k$ and upper bounds $u_1,..., u_k$  the task is to compute the best clustering with cluster sizes $c_1, ..., c_k$ such that $l_i\leq c_i\leq u_i$ for $i=1,..., k$.
+- `outlier:` for a given number of outliers $out$ the task is to compute the best clustering where it is allowed to remove up to $out$ many points from the dataset.
+- `lower/upper bounds and outlier:` the task is to compute the best clustering with cluster sizes $c_1, ..., c_k$ such that $l_i\leq c_i\leq u_i$ for $i=1,..., k$ while it is also allowed to remove up to $out$ many points from the dataset.
 
 
 ## Installation
@@ -45,6 +53,18 @@ pip install exact-kmeans
 ```
 
 ## Use within Python
+```
+class exact_kmeans.ilp.ExactKMeans(n_clusters, config_file: Path(__file__).parent.resolve()/ "config"/ "default.yaml", kmeans_iterations = 100, LB = None, UB = None, outlier = 0)
+```
+### Parameters:
+-`n_clusters: int` Number of clusters k of the k-means solution
+-`config-file: Union[str, Path], dafault=Path(__file__).parent.resolve()/ "config"/ "default.yaml"` config file for branch and bound and ILP cofigurations, see [Here](#config-file)
+-`kmeans_iterations: int, default=100` In the unconstrained version this is the number of runs of the k-means++ algortihm, in the constrained version this is the number of runs of the k-means++ algorithm plus a postprocessing step which gurantees that the constrains are satisfied. The solution with smallest cost among all iterations is returned and used as initialization for the branch and bound approach. Better solutions can decrease the computation time of branch and bound.
+-`LB: Optional[List], default=None` List of lower bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(LB)` is smaller equal the size of the data set, otherwise there is no feasible solution.
+-`UB: Optional[List], default=None` List of upper bounds for the size of clusters. It must have length `n_clusters`. If provided, please guarantee that `sum(UB)+outlier` is greater equal the size of the data set, otherwise there is no feasible solution.
+-`outlier: int, default=0` Number of outliers, it must be non-negative. If provided please gurantee that it is smaller equal the size of the data set. Points labeled as outliers in the computed solution have label `n_clusters`.
+
+## Example:
 
 ```python
 from exact_kmeans import ExactKMeans
@@ -57,21 +77,33 @@ iris = fetch_ucirepo(id=53)
 
 X = iris.data.features
 
-ilp = ExactKMeans(n_clusters=3)
-res = ilp.fit(X)
+#If desired, add lower bounds LB and upper bounds UB as lists
+LB=[24, 20, 45]
+UB=[45, 60, 59]
+
+#If desired, add number of outliers
+out=10
+
+#vanilla k-means
+ilp_1 = ExactKMeans(n_clusters=3)
+res_1 = ilp_1.fit(X)
+
+#k-means with bounds and outliers
+ilp_2= ExactKMeans(n_clusters=3, LB=LB, UB=UB, outlier=out)
+res_2 = ilp_2.fit(X)
 
 with open("output.json", "w") as f:
-    json.dump(res, f, indent=4, cls=JsonEncoder)
+    json.dump(res_1, f, indent=4, cls=JsonEncoder)
 
 # You can also print the branch and bound tree to visualize the decisions made by the algorithm
 # Below you find an example of the tree and meaning of the colors
 from exact_kmeans.plot_tree import plot
 
 plot(
-  nodes=res.processed_cluster_sizes,
+  nodes=res_1.processed_cluster_sizes,
   filename="test",
   plot_folder="plots",
-  optimal_objective=res.model.ObjVal,
+  optimal_objective=res_1.model.ObjVal,
 )
 
 ```
@@ -88,9 +120,14 @@ Install the package
 poetry install
 ```
 
-Run the program
+Run the program for vanilla k-means
 ```bash
 poetry run python -m exact_kmeans --data-path iris.csv --verbose --results-path test/iris.json --k 3 --config-file exact_kmeans/config/default.yaml
+```
+
+Run the program for constrained k-means: `bounds-path` and `outlier` are both optional
+```bash
+poetry run python -m exact_kmeans --data-path iris.csv --verbose --results-path test/iris.json --k 3 --config-file exact_kmeans/config/default.yaml --bounds-path test/iris_bounds.csv --outlier 15
 ```
 
 Your `data-path` should be a file with a header containing only the comma-separated data points. Example:
@@ -102,6 +139,15 @@ Your `data-path` should be a file with a header containing only the comma-separa
 4.6,3.1,1.5,0.2
 5.0,3.6,1.4,0.2
 ...
+```
+
+Your `bounds-path` should be a file with a header containing comma-separated values. Column with name `LB` contains the lower bounds column with name `UB` contains the upper bounds. If there is no column with name `LB` the lower bounds will be set to the default value 0 if there is no culumn with name `UB` the upper bounds will be set to default value `numpy.inf`. If one of the columns contains less values than the number of clusters k, it will be filled with default values up to k.  Example:
+
+```csv
+LB,UB
+30,45
+12,12
+54,112
 ```
 
 ## Plot the Branch and Bound Tree
