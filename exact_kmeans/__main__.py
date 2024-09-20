@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import sys
+from os.path import join
 from pathlib import Path
 from time import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -77,7 +78,9 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, required=True)
     parser.add_argument("--data-path", type=Path, required=True)
     parser.add_argument(
-        "--config-file", type=Path, default="exact_kmeans/config/default.yaml"
+        "--config-file",
+        type=Path,
+        default=Path(join("exact_kmeans", "config", "default.yaml")),
     )
     parser.add_argument("--bounds-path", type=Path, default=None)
     parser.add_argument("--kmeans-iterations", type=int, default=100)
@@ -89,9 +92,13 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true")
 
     args = parser.parse_args()
-
     set_up_logger(
-        args.results_path.parent / args.results_path.name.replace(".json", ".log"),
+        Path(
+            join(
+                args.results_path.parent,
+                args.results_path.name.replace(".json", ".log"),
+            )
+        )
     )
 
     if args.verbose:
