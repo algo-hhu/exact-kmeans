@@ -294,15 +294,16 @@ class KMeans_bounded:
             LB = self.LB[0]
             UB = self.UB[0]
             # all cluster sizes are assignet the same bounds
+            LB_violated = False
             for label in cluster_sizes:
                 cluster_bounds[label] = (LB, UB)
                 if LB > cluster_sizes[label]:
-                    return cluster_bounds, False
+                    LB_violated = True
                 excess += max(0, cluster_sizes[label] - UB)
-            if excess <= self.outlier:
-                return cluster_bounds, True
-            else:
+            if excess > self.outlier or LB_violated:
                 return cluster_bounds, False
+            else:
+                return cluster_bounds, True
 
         G = nx.DiGraph()
         # add edges between clusters and bounds
