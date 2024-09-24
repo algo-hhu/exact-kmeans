@@ -81,7 +81,7 @@ class ExactKMeans:
                     self.tolerance_value, self.changed_model_params[param]
                 )
 
-        self.constraints = {"bounds": False, "outlier": False, "exact": False}
+        self.constraints = {"bounds": False, "outlier": False}
         self.UB = []
         self.LB = []
         if LB is not None or UB is not None:
@@ -100,12 +100,6 @@ class ExactKMeans:
                     raise ValueError(
                         f"In position {i}: lower bound is larger than upper bound."
                     )
-
-            if self.LB == self.UB:
-                self.constraints["exact"] = True
-                logger.info(
-                    "Same lower bounds and upper bounds, compute exact solution."
-                )
 
             logger.info(f"Lower bounds set to {self.LB}, upper bounds set to {self.UB}")
 
