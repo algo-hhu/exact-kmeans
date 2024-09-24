@@ -631,7 +631,16 @@ class ExactKMeans:
                     f"and outliers {self.n-sum(cluster_sizes)}"
                     f"with cost {ILP_init.best_inertia}."
                 )
-            start_sol = ILP_init.best_labels
+            if (
+                kmeans_cost(ILP_init.best_labels, points=self.X, k=len(cluster_sizes))
+                <= tightest_upper_bound
+            ):
+                logger.info(
+                    f"Computed intial solution for ILP exceeds currently best upper bound "
+                    f"{tightest_upper_bound}. Warm start not possible."
+                )
+                start_sol = ILP_init.best_labels
+
         start = time()
         model = self.run_fixed_cluster_sizes_ilp(
             cluster_sizes=cluster_sizes,
