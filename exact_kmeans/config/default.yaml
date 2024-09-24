@@ -2,8 +2,9 @@ ilp_version: v4
 
 num_processes: 0.8
 branch_priorities: true
+warm_start: true
 replace_min: true
-branching_levels: 2
+branching_levels: 3
 fill_cluster_sizes: false
 
 model_params:

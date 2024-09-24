@@ -148,6 +148,10 @@ class KMeans_bounded:
         self.UB = [np.inf] * self.k if UB is None else UB
         self.outlier = outlier
         self.out_label = n_clusters
+        self.uniform = False
+        if len(set(self.UB)) == 1 and len(set(self.LB)) == 1:
+            self.uniform = True
+
         if self.outlier < 0:
             raise ValueError("Number of outliers must be positive.")
 
@@ -284,6 +288,22 @@ class KMeans_bounded:
 
     # check if solution satisfies lower and upper bounds by computing a min cost flow
     def check_bound_feasibility(self, cluster_sizes: Dict) -> Tuple[Dict, bool]:
+        cluster_bounds = {label: Tuple[int, int] for label in cluster_sizes}
+        if self.uniform:
+            excess = 0
+            LB = self.LB[0]
+            UB = self.UB[0]
+            # all cluster sizes are assignet the same bounds
+            for label in cluster_sizes:
+                cluster_bounds[label] = (LB, UB)
+                if LB > cluster_sizes[label]:
+                    return cluster_bounds, False
+                excess += max(0, cluster_sizes[label] - UB)
+            if excess <= self.outlier:
+                return cluster_bounds, True
+            else:
+                return cluster_bounds, False
+
         G = nx.DiGraph()
         # add edges between clusters and bounds
         # the cost depends on the violation of the bounds by the cluster size
@@ -308,7 +328,6 @@ class KMeans_bounded:
         flow = nx.min_cost_flow(G)
 
         # transform flow into cluster bounds assignment
-        cluster_bounds = {label: Tuple[int, int] for label in cluster_sizes}
         excess = 0
         LB_violated = False
         for label in cluster_sizes:
@@ -435,17 +454,18 @@ class KMeans_bounded:
         else:
             for i in range(self.kmeans_iterations):
                 kmeans = KMeans(
-                    n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+                    n_clusters=self.k,
+                    n_init="auto",
+                    init="k-means++",
+                    random_state=i,
                 )
                 kmeans.fit(self.X)
 
                 if self.outlier == 0 and kmeans.inertia_ >= self.best_inertia:
                     continue
-
                 cost_bounded, labels_bounded = self.establish_bounds(
                     kmeans.labels_, kmeans.cluster_centers_
                 )
-
                 if cost_bounded < self.best_inertia:
                     self.best_inertia = cost_bounded
                     self.best_labels = labels_bounded

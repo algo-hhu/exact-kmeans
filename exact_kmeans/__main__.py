@@ -34,7 +34,6 @@ def read_bounds(
             UB = [np.inf] * k
             logger.info("No upper bounds provided. Fill up with infinity.")
 
-        print(LB, UB)
         # check if bounds can be satisfied
         for i in range(k):
             if not isinstance(LB[i], int) or (

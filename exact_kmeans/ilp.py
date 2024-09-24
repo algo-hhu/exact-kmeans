@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from gurobipy import GRB
+from threadpoolctl import threadpool_limits
 from tqdm import tqdm
 
 import exact_kmeans.dynamic_program.dp_plain as dp
@@ -80,7 +81,7 @@ class ExactKMeans:
                     self.tolerance_value, self.changed_model_params[param]
                 )
 
-        self.constraints = {"bounds": False, "outlier": False}
+        self.constraints = {"bounds": False, "outlier": False, "exact": False}
         self.UB = []
         self.LB = []
         if LB is not None or UB is not None:
@@ -100,6 +101,12 @@ class ExactKMeans:
                         f"In position {i}: lower bound is larger than upper bound."
                     )
 
+            if self.LB == self.UB:
+                self.constraints["exact"] = True
+                logger.info(
+                    "Same lower bounds and upper bounds, compute exact solution."
+                )
+
             logger.info(f"Lower bounds set to {self.LB}, upper bounds set to {self.UB}")
 
         self.outlier = outlier if outlier is not None else 0
@@ -116,6 +123,9 @@ class ExactKMeans:
         if self.config.get("branch_priorities", False):
             logger.info("Setting variable branch priorities.")
             self.ilp_version += "-priority-x"
+
+        if self.config.get("warm_start", False):
+            logger.info("Pre compute initial solution for ILPs.")
 
         if self.config.get("replace_min", False):
             logger.info("Replacing min function with linear constraints.")
@@ -543,7 +553,8 @@ class ExactKMeans:
 
         if solution is not None:
             for i, label in enumerate(solution):
-                x[i + self._v, label + self._v].start = 1
+                if label != k - 1:
+                    x[i + self._v, label + self._v].start = 1
 
         self.one_cluster_per_point_constraint(model, x, equals=equals)
 
@@ -605,10 +616,33 @@ class ExactKMeans:
     ) -> Tuple[Union[str, float], float]:
         objective_value: Union[str, float] = "infeasible"
         logger.info(f"Running ILP with cluster sizes: {cluster_sizes}")
+        start_sol = None
+        if self.config.get("warm_start", False):
+            logger.info(
+                f"Compute intial solution for ILP with cluster sizes {cluster_sizes}"
+                f"and outliers {self.n-sum(cluster_sizes)}."
+            )
+            ILP_init = init_bounds.KMeans_bounded(
+                n_clusters=len(cluster_sizes),
+                LB=list(cluster_sizes),
+                UB=list(cluster_sizes),
+                outlier=self.n - sum(cluster_sizes),
+                kmeans_iterations=10,
+            )
+            # need this, otherwise scikit learn KMeans does not work within multiprocessing
+            with threadpool_limits(user_api="openmp", limits=1):
+                ILP_init.fit(self.X)
+                logger.info(
+                    f"Found solution with cluster sizes {cluster_sizes}"
+                    f"and outliers {self.n-sum(cluster_sizes)}"
+                    f"with cost {ILP_init.best_inertia}."
+                )
+            start_sol = ILP_init.best_labels
         start = time()
         model = self.run_fixed_cluster_sizes_ilp(
             cluster_sizes=cluster_sizes,
             cost=tightest_upper_bound,
+            solution=start_sol,
             add_remaining_points=add_remaining_points,
         )
         ILP_time = time() - start
@@ -776,13 +810,13 @@ class ExactKMeans:
             if sum_bound > tightest_upper_bound.value:
                 found_bound = "sum_bound_greater"
                 logger.info(
-                    f"Upper bound {sum_bound} is greater than the "
+                    f"Lower bound {sum_bound} is greater than the "
                     f"current upper bound {tightest_upper_bound.value}, skipping..."
                 )
 
             # If we have the same number of cluster sizes as the number of clusters
             if len(current_cluster_sizes) == self.k:
-                add_out = True if self.constraints.get("outlier") else False
+                add_out = self.constraints.get("outlier", False)
                 found_bound, ILP_time = self.get_fixed_cluster_sizes_ilp_result(
                     current_cluster_sizes,
                     tightest_upper_bound.value,
@@ -817,7 +851,7 @@ class ExactKMeans:
                 # It does not make sense to run it if we only have one value
                 # Because we have done it before with the other ILP
                 if (
-                    len(current_cluster_sizes) >= 2
+                    len(current_cluster_sizes) >= 1
                     and len(current_cluster_sizes) <= self.ilp_branching_until_level
                 ):
                     if self.config.get("fill_cluster_sizes", False):
@@ -1115,6 +1149,41 @@ class ExactKMeans:
 
         return best_inertia, best_labels
 
+    def get_ilp_result_without_tolerance(
+        self, best_sizes: np.ndarray
+    ) -> Tuple[float, gp.Model]:
+        start_sol = None
+        if self.config.get("warm_start", False):
+            logger.info(
+                f"Compute intial solution for ILP with cluster sizes {best_sizes}"
+                f"and outliers {self.n-sum(best_sizes)}."
+            )
+            ILP_init = init_bounds.KMeans_bounded(
+                n_clusters=len(best_sizes),
+                LB=list(best_sizes),
+                UB=list(best_sizes),
+                outlier=self.n - sum(best_sizes),
+                kmeans_iterations=10,
+            )
+            ILP_init.fit(self.X)
+            logger.info(
+                f"Found solution with cluster sizes {best_sizes} and outliers"
+                f"{self.n-sum(best_sizes)} with cost {ILP_init.best_inertia}."
+            )
+            start_sol = ILP_init.best_labels
+
+        start = time()
+        ILP_model = self.run_fixed_cluster_sizes_ilp(
+            cluster_sizes=best_sizes,
+            cost=None,
+            solution=start_sol,
+            remove_tolerance=True,
+            add_remaining_points=self.constraints.get("outlier", False),
+        )
+        ILP_time = time() - start
+        logger.info(f"Final ILP took {ILP_time:.3f} seconds.")
+        return (ILP_time, ILP_model)
+
     def fit(
         self,
         X: Union[np.ndarray, pd.DataFrame],
@@ -1149,87 +1218,95 @@ class ExactKMeans:
                 f"Number of outliers {self.outlier}"
                 f"is greater equal number of points {self.n}."
             )
-
+        self.initial_labels = None
         self.load_run(load_existing_run_path)
         self.cache_current_run_path = cache_current_run_path
 
-        kmeanspp_cost = np.inf
-        if kmeanspp_labels is None:
-            kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
-        else:
-            # if the solution constains outliers,
-            # they have label k and are ignored in the cost computation
-            kmeanspp_cost = kmeans_cost(kmeanspp_labels, points=self.X, k=self.k)
-
-        assert (
-            kmeanspp_labels is not None
-        ), "KMeans++ labels must be either provided or computed before continuing."
-
-        logger.info("Chosen initial KMeans++ solution with cost: %f", kmeanspp_cost)
-
-        try:
-            # if the solution constains outliers, they have label k and will be removed
-            self.initial_labels, kmeanspp_sizes = self.sort_labels(
-                kmeanspp_labels, out_label=self.k
+        if self.constraints.get("bounds", False) and (
+            sum(self.LB) + self.outlier == self.n
+            or sum(self.UB) + self.outlier == self.n
+        ):
+            best_sizes = self.LB if (sum(self.LB) + self.outlier == self.n) else self.UB
+            logger.info(
+                f"Only cluster sizes {best_sizes} and number of outliers"
+                f" {self.outlier} possible. Skipping branch and bound."
             )
-            self.kmeanspp_cluster_cost = kmeanspp_cost
+            logger.info(f"Running ILP with best cluster sizes: {best_sizes}.")
+            ILP_time, self.model = self.get_ilp_result_without_tolerance(best_sizes)
+            self.processed_cluster_sizes = [(self.model.ObjVal, ILP_time, best_sizes)]
+            logger.info(
+                f"The best found objective was {self.model.ObjVal} with size {best_sizes}. "
+            )
+        else:
+            kmeanspp_cost = np.inf
+            if kmeanspp_labels is None:
+                kmeanspp_cost, kmeanspp_labels = self.compute_initial_cost_bound()
+            else:
+                # if the solution constains outliers,
+                # they have label k and are ignored in the cost computation
+                kmeanspp_cost = kmeans_cost(kmeanspp_labels, points=self.X, k=self.k)
 
-            self.compute_cluster_size_objectives()
+            assert (
+                kmeanspp_labels is not None
+            ), "KMeans++ labels must be either provided or computed before continuing."
 
-            # Construct lower bounds for clustering sizes using the dynamic program
-            if self.dp_bounds is None or self.dp_bounds.sum() == 0:
-                self.dp_bounds = dp.compute_bounds(
-                    self.n, self.k, self.cluster_size_objectives
+            logger.info("Chosen initial KMeans++ solution with cost: %f", kmeanspp_cost)
+
+            try:
+                # if the solution constains outliers, they have label k and will be removed
+                self.initial_labels, kmeanspp_sizes = self.sort_labels(
+                    kmeanspp_labels, out_label=self.k
+                )
+                self.kmeanspp_cluster_cost = kmeanspp_cost
+
+                self.compute_cluster_size_objectives()
+
+                # Construct lower bounds for clustering sizes using the dynamic program
+                if self.dp_bounds is None or self.dp_bounds.sum() == 0:
+                    self.dp_bounds = dp.compute_bounds(
+                        self.n, self.k, self.cluster_size_objectives
+                    )
+
+                best_sizes, best_obj = self.compute_best_cluster_sizes(kmeanspp_sizes)
+            except KeyboardInterrupt:
+                store_path = (
+                    Path(f"exact_kmeans_pid_{os.getpid()}.json")
+                    if self.cache_current_run_path is None
+                    else self.cache_current_run_path
+                )
+                logger.info(
+                    "Received KeyboardInterrupt, stopping optimization "
+                    f"and storing to {store_path}."
                 )
 
-            best_sizes, best_obj = self.compute_best_cluster_sizes(kmeanspp_sizes)
-        except KeyboardInterrupt:
-            store_path = (
-                Path(f"exact_kmeans_pid_{os.getpid()}.json")
-                if self.cache_current_run_path is None
-                else self.cache_current_run_path
-            )
+                existing_run = {
+                    "dp_bounds": self.dp_bounds.tolist()
+                    if self.dp_bounds is not None
+                    else [],
+                    "cluster_size_objectives": self.cluster_size_objectives,
+                    "optimal_kmeanspp_cluster_cost": self.kmeanspp_cluster_cost,
+                    "processed_cluster_sizes": self.processed_cluster_sizes,
+                }
+                with store_path.open("w") as f:
+                    json.dump(existing_run, f, cls=JsonEncoder)
+
+                exit(0)
+
             logger.info(
-                "Received KeyboardInterrupt, stopping optimization "
-                f"and storing to {store_path}."
+                f"Re-running ILP with best cluster sizes: {best_sizes} and cost {best_obj}."
             )
 
-            existing_run = {
-                "dp_bounds": self.dp_bounds.tolist()
-                if self.dp_bounds is not None
-                else [],
-                "cluster_size_objectives": self.cluster_size_objectives,
-                "optimal_kmeanspp_cluster_cost": self.kmeanspp_cluster_cost,
-                "processed_cluster_sizes": self.processed_cluster_sizes,
-            }
-            with store_path.open("w") as f:
-                json.dump(existing_run, f, cls=JsonEncoder)
+            _, self.model = self.get_ilp_result_without_tolerance(best_sizes)
 
-            exit(0)
-
-        logger.info(
-            f"Re-running ILP with best cluster sizes: {best_sizes} and cost {best_obj}."
-        )
-        start = time()
-        self.model = self.run_fixed_cluster_sizes_ilp(
-            cluster_sizes=best_sizes,
-            cost=None,
-            remove_tolerance=True,
-            add_remaining_points=self.constraints.get("outlier", False),
-        )
-
-        logger.info(f"Final ILP took {time() - start:.3f} seconds.")
-
-        if not np.isclose(self.model.ObjVal, best_obj, atol=1e-04):
-            logger.error(
-                f"Objective value of final model {self.model.ObjVal} "
-                f"does not match best objective value {best_obj}."
+            if not np.isclose(self.model.ObjVal, best_obj, atol=1e-04):
+                logger.error(
+                    f"Objective value of final model {self.model.ObjVal} "
+                    f"does not match best objective value {best_obj}."
+                )
+            logger.info(
+                f"The best found objective was {self.model.ObjVal} with size {best_sizes} "
+                f"compared to initial bound {self.kmeanspp_cluster_cost}."
             )
-
-        logger.info(
-            f"The best found objective was {self.model.ObjVal} with size {best_sizes} "
-            f"compared to initial bound {self.kmeanspp_cluster_cost}."
-        )
 
         self.labels_ = self.get_labels()
         self.cluster_centers_ = compute_centers(self.X, self.labels_)
