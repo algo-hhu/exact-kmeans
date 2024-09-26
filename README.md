@@ -28,12 +28,13 @@ To search for the cluster sizes of an optimal solution we use a branch and bound
 ## Config file
 To customize the runs, you can create a config file. The default config file is [`exact_kmeans/config/default.yaml`](exact_kmeans/config/default.yaml). You can also pass a different config file as an argument.
 - `num_processes` (integer or float) sets the number of processes used. The algorithm was parallelized using the `multiprocessing` package, so you can set the number of processes that you want to use. If you use an integer, at most that number of processes will be taken, otherwise if you use a float, it will be a fraction of the available CPUs. If the parameter is not passed, the algorithm will use all available CPUs.
-- `bound_model_params` are the arguments that are passed to the ILP#1 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
-- `model_params` are the arguments that are passed to the ILP#2 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
 - `branching_priorities` (true/false) is passed to the ILP#2 model and enable/disable the use of branching priorities. If true, the priority of the $x$ variable will be higher than the other variables. According to our tests, this speeds up the solving.
+- `warm_start` (true/false) If set to true a pre-processing step is used to find a feasible solution to ILP#2, if it finds a feasible solution the solution is passed to ILP#2. This can decrease the time needed to solve ILP#2.
 - `replace_min` (true/false) replaces a minimum constraint with a linear version. According to our tests, this speeds up the solving.
 - `branching_levels` (integer) Sets the maximum level of a branching node where we run ILP#2 to bound the cost. Since this can increase the number of ILPs that are computed, it may only make sense for small levels.
 - `fill_cluster_sizes` (true/false) If set to false we run ILP#2  only with cluster sizes fixed at the branching node. If set to true we fill the cluster sizes up to $k$. Setting the variable to true can result in a larger computation time for ILP#2 but may result in less branching, which can save time. For small $k$ we recommend setting it to false and for large $k$ we recommend setting it to true.
+- `bound_model_params` are the arguments that are passed to the ILP#1 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
+- `model_params` are the arguments that are passed to the ILP#2 model. Please have a look at the [Gurobi documentation](https://www.gurobi.com/documentation/9.1/refman/parameters.html) for more information.
 
 ## Constraints
 
