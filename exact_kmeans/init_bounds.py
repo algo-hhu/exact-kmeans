@@ -11,7 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 class KMeans_vanilla:
-    def __init__(self, n_clusters: int, kmeans_iterations: int = 100) -> None:
+    def __init__(
+        self, n_clusters: int, kmeans_iterations: int = 100, seed: Optional[int] = None
+    ) -> None:
+        if seed is not None:
+            self.seed = seed
+        else:
+            self.seed = 0
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
 
@@ -23,7 +29,10 @@ class KMeans_vanilla:
 
         for i in range(self.kmeans_iterations):
             kmeans = KMeans(
-                n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+                n_clusters=self.k,
+                n_init="auto",
+                init="k-means++",
+                random_state=self.seed + i,
             )
             kmeans.fit(self.X)
             if kmeans.inertia_ < self.best_inertia:
@@ -34,8 +43,16 @@ class KMeans_vanilla:
 
 class KMeans_outlier:
     def __init__(
-        self, n_clusters: int, kmeans_iterations: int = 100, outlier: int = 0
+        self,
+        n_clusters: int,
+        kmeans_iterations: int = 100,
+        outlier: int = 0,
+        seed: Optional[int] = None,
     ) -> None:
+        if seed is not None:
+            self.seed = seed
+        else:
+            self.seed = 0
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
         self.outlier = outlier
@@ -114,7 +131,10 @@ class KMeans_outlier:
 
         for i in range(self.kmeans_iterations):
             kmeans = KMeans(
-                n_clusters=self.k, n_init="auto", init="k-means++", random_state=i
+                n_clusters=self.k,
+                n_init="auto",
+                init="k-means++",
+                random_state=self.seed + i,
             )
             kmeans.fit(self.X)
             if self.outlier > 0:
@@ -140,7 +160,12 @@ class KMeans_bounded:
         LB: Optional[List] = None,
         UB: Optional[List] = None,
         outlier: int = 0,
+        seed: Optional[int] = None,
     ) -> None:
+        if seed is not None:
+            self.seed = seed
+        else:
+            self.seed = 0
         self.k = n_clusters
         self.kmeans_iterations = kmeans_iterations
 
@@ -458,7 +483,7 @@ class KMeans_bounded:
                     n_clusters=self.k,
                     n_init="auto",
                     init="k-means++",
-                    random_state=i,
+                    random_state=self.seed + i,
                 )
                 kmeans.fit(self.X)
 
