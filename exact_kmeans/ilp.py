@@ -74,7 +74,7 @@ class ExactKMeans:
         for key, value in self.config["bound_model_params"].items():
             self.changed_bound_model_params[key] = value
 
-        self.tolerance_value = 0
+        self.tolerance_value = 1e-10
         for param in self.changed_model_params:
             if "tol" in param.lower():
                 self.tolerance_value = max(
@@ -511,7 +511,7 @@ class ExactKMeans:
             f"Objective for cluster size {m}: {model.ObjVal} "
             f"computed in {time() - start:.3f} seconds."
         )
-        obj = model.ObjVal
+        obj = model.ObjVal - self.tolerance_value
         del model
 
         return m, obj
@@ -880,30 +880,34 @@ class ExactKMeans:
                             add_remaining_points=True,
                         )
 
-                    # # TODO: This is still not working properly
-                    # if not self.config.get("fill_cluster_sizes", False) and isinstance(
-                    #     found_bound, float
-                    # ):
-                    #     n_fixed_points += search_end
-                    #     k_fixed += 1
-                    #     dp_bound = (
-                    #         found_bound
-                    #         + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
-                    #     )
-                    #     logger.info(
-                    #     f"Bound for {test_sizes} ({found_bound})"
-                    #       " with DP bound ({dp_bound})"
-                    #     )
-                    #     if dp_bound > tightest_upper_bound.value:
-                    #         logger.info(
-                    #             f"Bound for {test_sizes} ({found_bound}) "
-                    #             f"with DP bound ({dp_bound}) "
-                    #             "is greater than the current upper bound "
-                    #             f"{tightest_upper_bound.value}, skipping..."
-                    #         )
-                    #         found_bound = "ilp_sum_bound_greater"
-
-                if found_bound not in {"infeasible", "ilp_sum_bound_greater"}:
+                    if not self.config.get("fill_cluster_sizes", False) and isinstance(
+                        found_bound, float
+                    ):
+                        n_fixed_points += search_end
+                        k_fixed += 1
+                        dp_bound = (
+                            found_bound
+                            + self.dp_bounds[self.n - n_fixed_points][self.k - k_fixed]
+                        )
+                        logger.info(
+                            f"Bound for {test_sizes} ({found_bound}) with DP bound ({dp_bound})"
+                        )
+                        if (
+                            np.isfinite(dp_bound).all()
+                            and dp_bound > tightest_upper_bound.value
+                        ):
+                            logger.info(
+                                f"Bound for {test_sizes} ({found_bound}) "
+                                f"with DP bound ({dp_bound}) "
+                                "is greater than the current upper bound "
+                                f"{tightest_upper_bound.value}, skipping..."
+                            )
+                            found_bound = "ilp_sum_bound_greater"
+                if found_bound not in {
+                    "infeasible",
+                    "ilp_sum_bound_greater",
+                    "constr_infeasible",
+                }:
                     found_bound = "branch"
                     # If the program is feasible and we have less than k clusters
                     # we need to select the next cluster size,

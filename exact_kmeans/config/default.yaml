@@ -1,6 +1,6 @@
 ilp_version: v4
 
-num_processes: 0.8
+num_processes: 1
 branch_priorities: true
 warm_start: true
 replace_min: true
