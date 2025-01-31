@@ -157,6 +157,9 @@ if __name__ == "__main__":
                 "changed_model_params": ilp.changed_model_params,
                 "changed_bound_params": ilp.changed_bound_model_params,
                 "optimal": ilp.model.Status == 2 if ilp.model is not None else False,
+                "branching_levels": ilp.ilp_branching_until_level,
+                "warm_start": ilp.config.get("warm_start", False),
+                "fill_cluster_sizes": ilp.config.get("fill_cluster_sizes", False),
                 "git_hash": get_git_hash(),
             }
         )

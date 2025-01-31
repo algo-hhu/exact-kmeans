@@ -143,3 +143,13 @@ def compute_center_distances(
         dist.append((i, get_distance(centers[label], point)))
 
     return dist
+
+
+def sort_labels_by_clustersize(labels: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    labels_names, sizes = np.unique(labels, return_counts=True)
+    idx = np.argsort(sizes)[::-1]
+    labels_map = {labels_names[idx[i]]: i for i in range(len(labels_names))}
+
+    labels_new = np.array([labels_map[labels[i]] for i in range(len(labels))])
+
+    return labels_new, np.array([sizes[idx[i]] for i in range(len(sizes))])

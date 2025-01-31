@@ -471,6 +471,7 @@ class KMeans_bounded:
                 n_clusters=self.k,
                 kmeans_iterations=self.kmeans_iterations,
                 outlier=self.outlier,
+                seed=self.seed,
             )
             kmeans_out.fit(self.X)
             self.best_inertia = kmeans_out.best_inertia

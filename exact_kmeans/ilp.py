@@ -27,6 +27,7 @@ from exact_kmeans.util import (
     get_distance,
     kmeans_cost,
     print_variables,
+    sort_labels_by_clustersize,
 )
 
 # class GurobiFilter(logging.Filter):
@@ -59,11 +60,13 @@ class ExactKMeans:
         LB: Optional[list] = None,
         UB: Optional[list] = None,
         outlier: int = 0,
+        seed: Optional[int] = None,
     ) -> None:
         self.k = n_clusters
         self._v = 1
         self._k = self.k + self._v
         self.kmeans_iterations = kmeans_iterations
+        self.seed = seed
 
         self.changed_model_params = {}
         self.changed_bound_model_params = {}
@@ -622,17 +625,20 @@ class ExactKMeans:
                 UB=list(cluster_sizes),
                 outlier=self.n - sum(cluster_sizes),
                 kmeans_iterations=10,
+                seed=self.seed,
             )
             # need this, otherwise scikit learn KMeans does not work within multiprocessing
             with threadpool_limits(user_api="openmp", limits=1):
                 ILP_init.fit(self.X)
+            if ILP_init.best_inertia <= tightest_upper_bound:
+                start_sol, start_sol_sizes = sort_labels_by_clustersize(
+                    ILP_init.best_labels
+                )
                 logger.info(
-                    f"Found solution with cluster sizes {cluster_sizes} "
-                    f"and outliers {self.n-sum(cluster_sizes)} "
+                    f"Found solution with cluster sizes {start_sol_sizes} "
+                    f"and outliers {self.n-sum(start_sol_sizes)} "
                     f"with cost {ILP_init.best_inertia}."
                 )
-            if ILP_init.best_inertia <= tightest_upper_bound:
-                start_sol = ILP_init.best_labels
             else:
                 logger.info(
                     f"Computed intial solution for ILP with cost {ILP_init.best_inertia} "
@@ -1124,10 +1130,11 @@ class ExactKMeans:
 
             else:
                 kmeans_init_b = init_bounds.KMeans_bounded(
-                    self.k,
-                    self.kmeans_iterations,
-                    self.LB,
-                    self.UB,
+                    n_clusters=self.k,
+                    kmeans_iterations=self.kmeans_iterations,
+                    LB=self.LB,
+                    UB=self.UB,
+                    seed=self.seed,
                 )
             kmeans_init_b.fit(self.X)
             best_inertia = kmeans_init_b.best_inertia
@@ -1136,7 +1143,7 @@ class ExactKMeans:
         elif self.constraints.get("outlier", False):
             logger.info(f"Number of outliers is at most {self.outlier}.")
             kmeans_init_o = init_bounds.KMeans_outlier(
-                self.k, self.kmeans_iterations, self.outlier
+                self.k, self.kmeans_iterations, self.outlier, self.seed
             )
             kmeans_init_o.fit(self.X)
             best_inertia = kmeans_init_o.best_inertia
@@ -1147,6 +1154,7 @@ class ExactKMeans:
             kmeans_init = init_bounds.KMeans_vanilla(
                 self.k,
                 self.kmeans_iterations,
+                self.seed,
             )
             kmeans_init.fit(self.X)
             best_inertia = kmeans_init.best_inertia
@@ -1169,6 +1177,7 @@ class ExactKMeans:
                 UB=list(best_sizes),
                 outlier=self.n - sum(best_sizes),
                 kmeans_iterations=10,
+                seed=self.seed,
             )
             ILP_init.fit(self.X)
             logger.info(
