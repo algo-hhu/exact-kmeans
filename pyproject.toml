@@ -12,7 +12,7 @@ include = ["images"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-gurobipy = "^11.0.3"
+gurobipy = "^13.0.3"
 scikit-learn = "^1.6.1"
 numpy = "^1.26.4"
 pandas = "^2.0.3"
