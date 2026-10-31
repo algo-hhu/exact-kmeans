@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "exact-kmeans"
-version = "0.1.4"
+version = "0.1.5"
 description = "Computes an optimal k-means solution for small instances and small k."
 authors = ["Melanie Schmidt <mschmidt@hhu.de>", "Daniel Schmidt <dschmidt@hhu.de>", "Giulia Baldini <giulia.baldini@hhu.de>", "Anna Arutyunova <anna.arutyunova@hhu.de>"]
 readme = "README.md"
@@ -11,23 +11,23 @@ packages = [
 include = ["images"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.12"
 gurobipy = "^13.0.3"
-scikit-learn = "^1.6.1"
-numpy = "^1.26.4"
-pandas = "^2.0.3"
+numpy = "^2.4.0"
+scikit-learn = "^1.9.1"
+pandas = "^3.1.0"
 
-tqdm = "^4.66.4"
+tqdm = "^4.70.1"
 
 [tool.poetry.group.dev.dependencies]
-black = "^26.3.1"
-pre-commit = "^2.14.0"
-flake8 = "^7.0.0"
-mypy = "^1.10.0"
+black = "^26.10.1"
+pre-commit = "^4.7.0"
+flake8 = "^7.5.0"
+mypy = "^2.4.1"
 
 
 [tool.poetry.group.viz.dependencies]
-graphviz = "^0.20.3"
+graphviz = "^0.21"
 
 [build-system]
 requires = ["poetry-core"]
