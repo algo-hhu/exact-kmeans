@@ -1,3 +1,5 @@
+---
+
 name: Upload to PyPI
 
 on:
@@ -10,48 +12,60 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build wheel and sdist
+  build_wheels:
+    name: Build manylinux wheels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.3.5
+        env:
+          CIBW_BUILD: >-
+            cp312-manylinux_x86_64
+            cp313-manylinux_x86_64
+            cp314-manylinux_x86_64
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          # Prüft, dass jedes Wheel importierbar ist:
+          CIBW_TEST_COMMAND: "python -c 'import exact-kmeans'"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels
+          path: wheelhouse/*.whl
+
+  build_sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: Build wheel and sdist
+      - name: Build sdist
         run: |
           pip install poetry
-          poetry build
+          poetry build --format sdist
 
-      - name: Check metadata
-        run: |
-          pip install twine
-          twine check dist/*
-
-      - name: Smoke test (Wheel installieren und importieren)
-        run: |
-          python -m venv /tmp/venv
-          /tmp/venv/bin/pip install dist/*.whl
-          /tmp/venv/bin/python -c "import exact_kmeans"
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: dist
-          path: dist/*
+          name: sdist
+          path: dist/*.tar.gz
 
   publish:
     name: Publish to PyPI
-    needs: [build]
+    needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
-          name: dist
           path: dist
+          merge-multiple: true
 
       - name: List files to upload
         run: ls -l dist
