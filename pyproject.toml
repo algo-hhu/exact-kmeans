@@ -15,7 +15,8 @@ packages = [
 ]
 include = ["images"]
 classifiers = [
-    "Intended Audience :: Science/Research"
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: Implementation :: CPython",
 ]
 
 [tool.poetry.urls]
